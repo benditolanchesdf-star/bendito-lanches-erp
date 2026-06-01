@@ -13,7 +13,7 @@ create table if not exists public.configuracoes (
 create table if not exists public.whatsapp_logs (
     id          uuid primary key default gen_random_uuid(),
     filial_id   uuid references public.filiais(id),
-    pedido_id   uuid references public.pedidos(id),
+    pedido_id   uuid,  -- referência sem FK para evitar dependência de ordem de migration
     telefone    text,
     mensagem    text,
     status      text default 'enviado', -- enviado, erro

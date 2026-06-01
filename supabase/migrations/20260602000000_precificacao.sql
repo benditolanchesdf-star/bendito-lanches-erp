@@ -156,14 +156,32 @@ ALTER TABLE pricing_budgets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pricing_budget_items ENABLE ROW LEVEL SECURITY;
 
 -- Políticas abertas (mesmo padrão das outras tabelas do projeto)
-CREATE POLICY IF NOT EXISTS "pricing_settings_all" ON pricing_settings FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "pricing_fixed_costs_all" ON pricing_fixed_costs FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "pricing_inputs_all" ON pricing_inputs FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "pricing_products_all" ON pricing_products FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "pricing_product_inputs_all" ON pricing_product_inputs FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "pricing_direct_products_all" ON pricing_direct_products FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "pricing_budgets_all" ON pricing_budgets FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "pricing_budget_items_all" ON pricing_budget_items FOR ALL USING (true) WITH CHECK (true);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'pricing_settings' AND policyname = 'pricing_settings_all') THEN
+    CREATE POLICY "pricing_settings_all" ON pricing_settings FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'pricing_fixed_costs' AND policyname = 'pricing_fixed_costs_all') THEN
+    CREATE POLICY "pricing_fixed_costs_all" ON pricing_fixed_costs FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'pricing_inputs' AND policyname = 'pricing_inputs_all') THEN
+    CREATE POLICY "pricing_inputs_all" ON pricing_inputs FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'pricing_products' AND policyname = 'pricing_products_all') THEN
+    CREATE POLICY "pricing_products_all" ON pricing_products FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'pricing_product_inputs' AND policyname = 'pricing_product_inputs_all') THEN
+    CREATE POLICY "pricing_product_inputs_all" ON pricing_product_inputs FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'pricing_direct_products' AND policyname = 'pricing_direct_products_all') THEN
+    CREATE POLICY "pricing_direct_products_all" ON pricing_direct_products FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'pricing_budgets' AND policyname = 'pricing_budgets_all') THEN
+    CREATE POLICY "pricing_budgets_all" ON pricing_budgets FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'pricing_budget_items' AND policyname = 'pricing_budget_items_all') THEN
+    CREATE POLICY "pricing_budget_items_all" ON pricing_budget_items FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
 
 -- Seed: configuração inicial para a filial principal
 INSERT INTO pricing_settings (filial_id, estimated_monthly_revenue)
