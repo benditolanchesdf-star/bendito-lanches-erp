@@ -136,13 +136,19 @@ export default function PDVPage() {
     setFase('pdv')
   }
 
-  async function carregarProdutos() {
-    const { data } = await supabase.from('produtos')
-      .select('id, nome, preco_venda, unidade').eq('ativo', true)
-      .eq('filial_id', filialSel.id).order('nome')
-    setProdutos(data || [])
-  }
+ async function carregarProdutos() {
+  // Produtos para o caixa — da filial atual
+  const { data: prodCaixa } = await supabase.from('produtos')
+    .select('id, nome, preco_venda, unidade').eq('ativo', true)
+    .eq('filial_id', filialSel.id).order('nome')
+  setProdutos(prodCaixa || [])
 
+  // Produtos para pedido à Matriz — sempre da Matriz
+  const { data: prodMatriz } = await supabase.from('produtos')
+    .select('id, nome, preco_venda, unidade').eq('ativo', true)
+    .eq('filial_id', '11111111-1111-1111-1111-111111111111').order('nome')
+  setProdutosPed(prodMatriz || [])
+}
   async function carregarEstoque() {
     const [{ data: ef }, { data: al }] = await Promise.all([
       supabase.from('estoque_filial').select('*, produtos(nome, unidade)')
