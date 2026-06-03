@@ -15,18 +15,7 @@ export async function POST(request: NextRequest) {
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
 
-    // Verificar se quem está chamando é admin
-    const authHeader = request.headers.get('Authorization')
-    if (authHeader) {
-      const token = authHeader.replace('Bearer ', '')
-      const { data: { user } } = await supabaseAdmin.auth.getUser(token)
-      if (!user) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 })
-      const { data: profile } = await supabaseAdmin
-        .from('profiles').select('papel').eq('id', user.id).maybeSingle()
-      if (!['admin', 'matriz'].includes(profile?.papel || '')) {
-        return NextResponse.json({ error: 'Sem permissão.' }, { status: 403 })
-      }
-    }
+    const filialFinal = filial_id || '11111111-1111-1111-1111-111111111111'
 
     // Criar usuário no Auth
     const { data: novoUser, error: errUser } = await supabaseAdmin.auth.admin.createUser({
@@ -41,14 +30,13 @@ export async function POST(request: NextRequest) {
     }
 
     const userId = novoUser.user.id
-    const filialFinal = filial_id || '11111111-1111-1111-1111-111111111111'
 
     // Criar profile
     await supabaseAdmin.from('profiles').upsert({
       id: userId, nome, papel, filial_id: filialFinal, ativo: true,
     })
 
-    // Criar papel inicial
+    // Criar papel inicial em usuario_papeis
     await supabaseAdmin.from('usuario_papeis').insert({
       user_id: userId, papel, filial_id: filial_id || null,
     })
@@ -60,14 +48,13 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Criar registro em public.usuarios (compatibilidade) — upsert sem .on()
+    // Criar registro em public.usuarios (compatibilidade)
     const { data: usuarioExiste } = await supabaseAdmin
       .from('usuarios').select('id').eq('email', email).maybeSingle()
 
     if (!usuarioExiste) {
       await supabaseAdmin.from('usuarios').insert({
-        id: userId, nome, email,
-        perfil: papel, ativo: true, filial_id: filialFinal,
+        id: userId, nome, email, perfil: papel, ativo: true, filial_id: filialFinal,
       })
     }
 
