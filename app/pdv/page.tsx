@@ -35,23 +35,19 @@ export default function PDVPage() {
   const [atendente, setAtendente] = useState<any>(null)
   const [caixaAberto, setCaixaAberto] = useState<any>(null)
 
-  // Login
   const [atendenteSel, setAtendenteSel] = useState('')
   const [senhaInput, setSenhaInput] = useState('')
   const [showSenha, setShowSenha] = useState(false)
   const [erroLogin, setErroLogin] = useState('')
 
-  // Trocar senha
   const [novaSenha, setNovaSenha] = useState('')
   const [confirmaSenha, setConfirmaSenha] = useState('')
   const [showNovaSenha, setShowNovaSenha] = useState(false)
   const [erroSenha, setErroSenha] = useState('')
   const [salvandoSenha, setSalvandoSenha] = useState(false)
 
-  // Caixa
   const [valorAbertura, setValorAbertura] = useState('')
 
-  // Produtos — preco_varejo é o campo correto
   const [produtos, setProdutos] = useState<any[]>([])
   const [produtosPed, setProdutosPed] = useState<any[]>([])
   const [busca, setBusca] = useState('')
@@ -59,7 +55,6 @@ export default function PDVPage() {
   const [clienteNome, setClienteNome] = useState('')
   const [desconto, setDesconto] = useState('')
 
-  // Pagamento rápido
   const [salvando, setSalvando] = useState(false)
   const [vendaConcluida, setVendaConcluida] = useState<any>(null)
   const [modalFechamento, setModalFechamento] = useState(false)
@@ -68,7 +63,6 @@ export default function PDVPage() {
   const [valPix, setValPix] = useState('')
   const [valCartao, setValCartao] = useState('')
 
-  // Pedido interno
   const [itensPed, setItensPed] = useState<ItemPedido[]>([])
   const [obsPed, setObsPed] = useState('')
   const [salvandoPed, setSalvandoPed] = useState(false)
@@ -77,7 +71,6 @@ export default function PDVPage() {
   const [outroQtd, setOutroQtd] = useState(1)
   const [outroUnidade, setOutroUnidade] = useState('un')
 
-  // Estoque
   const [estoqueItems, setEstoqueItems] = useState<any[]>([])
   const [alertas, setAlertas] = useState<any[]>([])
   const [resumo, setResumo] = useState<any>(null)
@@ -106,23 +99,10 @@ export default function PDVPage() {
     setAtendente(at)
     if (at.primeiro_acesso) { setFase('trocar_senha'); return }
     const { data: caixa } = await supabase.from('caixas_pdv')
-      .select('*').eq('filial_id', f.id).eq('atendente_id', at.id).eq('status', 'aberto').maybeSingle()
-    if (caixa) { setCaixaAberto(caixa); await carregarProdutos(f); setFase('pdv') }
+      .select('*').eq('filial_id', filialSel.id)
+      .eq('atendente_id', at.id).eq('status', 'aberto').maybeSingle()
+    if (caixa) { setCaixaAberto(caixa); await carregarProdutos(filialSel); setFase('pdv') }
     else setFase('caixa')
-  }
-
-  // Corrigido: recebe filial como parâmetro pois filialSel pode não estar atualizado ainda
-  async function carregarProdutos(f: any) {
-    const [{ data: prodCaixa }, { data: prodMatriz }] = await Promise.all([
-      // Produtos do caixa — da filial selecionada, usando preco_varejo
-      supabase.from('produtos').select('id, nome, preco_varejo, unidade_medida')
-        .eq('ativo', true).eq('filial_id', f.id).order('nome'),
-      // Produtos para pedido — sempre da Matriz
-      supabase.from('produtos').select('id, nome, unidade_medida')
-        .eq('ativo', true).eq('filial_id', MATRIZ_ID).order('nome'),
-    ])
-    setProdutos(prodCaixa || [])
-    setProdutosPed(prodMatriz || [])
   }
 
   async function trocarSenha() {
@@ -146,12 +126,35 @@ export default function PDVPage() {
     setFase('pdv')
   }
 
+  // Usa vw_produtos_filial — retorna preço correto por filial
+  async function carregarProdutos(f: any) {
+    const [{ data: prodCaixa }, { data: prodMatriz }] = await Promise.all([
+      supabase.from('vw_produtos_filial')
+        .select('produto_id, nome, preco_varejo, unidade_medida')
+        .eq('filial_id', f.id)
+        .eq('ativo_na_filial', true)
+        .order('nome'),
+      supabase.from('vw_produtos_filial')
+        .select('produto_id, nome, unidade_medida')
+        .eq('filial_id', MATRIZ_ID)
+        .eq('ativo_na_filial', true)
+        .order('nome'),
+    ])
+    // Mapear produto_id → id para compatibilidade com o carrinho
+    setProdutos((prodCaixa || []).map((p: any) => ({ ...p, id: p.produto_id })))
+    setProdutosPed((prodMatriz || []).map((p: any) => ({ ...p, id: p.produto_id })))
+  }
+
   async function carregarEstoque() {
     const [{ data: ef }, { data: al }] = await Promise.all([
-      supabase.from('estoque_filial').select('*, produtos(nome, unidade_medida)').eq('filial_id', filialSel.id),
-      supabase.from('vw_alertas_estoque').select('*').eq('filial_id', filialSel.id).neq('nivel_alerta', 'normal'),
+      supabase.from('produto_filial')
+        .select('*, produtos(nome, unidade_medida)')
+        .eq('filial_id', filialSel.id),
+      supabase.from('vw_alertas_estoque').select('*')
+        .eq('filial_id', filialSel.id).neq('nivel_alerta', 'normal'),
     ])
-    setEstoqueItems(ef || []); setAlertas(al || [])
+    setEstoqueItems(ef || [])
+    setAlertas(al || [])
   }
 
   async function carregarResumo() {
@@ -174,11 +177,9 @@ export default function PDVPage() {
     if (aba === 'resumo') carregarResumo()
   }, [aba, fase])
 
-  // Carrinho
   const subtotal = carrinho.reduce((s, i) => s + i.preco * i.quantidade, 0)
   const descontoVal = Number(desconto) || 0
   const total = Math.max(subtotal - descontoVal, 0)
-  const troco = Math.max((Number(valDinheiro) || 0) - total, 0)
 
   function addProduto(p: any) {
     setCarrinho(prev => {
@@ -192,8 +193,7 @@ export default function PDVPage() {
     setCarrinho(prev => prev.map(i => i.produto_id === id ? { ...i, quantidade: Math.max(1, i.quantidade + delta) } : i))
   }
 
-  // Finalizar venda com forma de pagamento
-  async function finalizarVenda(forma: 'dinheiro' | 'pix' | 'credito' | 'debito' | 'misto', vDin?: number) {
+  async function finalizarVenda(forma: 'dinheiro'|'pix'|'credito'|'debito'|'misto', vDin?: number) {
     if (!carrinho.length) return
     setSalvando(true)
     const vPag = {
@@ -219,12 +219,13 @@ export default function PDVPage() {
           subtotal: i.preco * i.quantidade,
         }))
       )
+      // Dar baixa no estoque usando produto_filial
       for (const item of carrinho) {
-        const { data: ef } = await supabase.from('estoque_filial')
-          .select('quantidade').eq('filial_id', filialSel.id).eq('produto_id', item.produto_id).maybeSingle()
-        if (ef) {
-          await supabase.from('estoque_filial')
-            .update({ quantidade: Math.max(0, Number(ef.quantidade) - item.quantidade), updated_at: new Date().toISOString() })
+        const { data: pf } = await supabase.from('produto_filial')
+          .select('estoque_atual').eq('filial_id', filialSel.id).eq('produto_id', item.produto_id).maybeSingle()
+        if (pf) {
+          await supabase.from('produto_filial')
+            .update({ estoque_atual: Math.max(0, Number(pf.estoque_atual) - item.quantidade), updated_at: new Date().toISOString() })
             .eq('filial_id', filialSel.id).eq('produto_id', item.produto_id)
         }
       }
@@ -245,7 +246,6 @@ export default function PDVPage() {
     setModalPagMisto(false); setSalvando(false)
   }
 
-  // Pedido interno
   function addProdutoPed(p: any) {
     setItensPed(prev => {
       const ex = prev.find(i => i.produto_id === p.id)
@@ -289,12 +289,9 @@ export default function PDVPage() {
     setCarrinho([]); setAtendenteSel(''); setSenhaInput(''); setFilialSel(null)
   }
 
-  // Variável auxiliar para fazerLogin (precisa de filialSel)
-  const f = filialSel
-
   const prodFiltrados = produtos.filter(p => p.nome.toLowerCase().includes(busca.toLowerCase()))
 
-  // ════ TELA: SELEÇÃO DE FILIAL ════
+  // ════ SELEÇÃO DE FILIAL ════
   if (fase === 'filial') return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
       <div className="bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-sm border border-gray-700">
@@ -305,11 +302,11 @@ export default function PDVPage() {
         </div>
         <p className="text-xs text-gray-400 text-center mb-4">Selecione a unidade</p>
         <div className="space-y-3">
-          {filiais.map(fil => (
-            <button key={fil.id} onClick={() => selecionarFilial(fil)}
+          {filiais.map(f => (
+            <button key={f.id} onClick={() => selecionarFilial(f)}
               className="w-full bg-gray-700 hover:bg-gray-600 border border-gray-600 hover:border-yellow-400 rounded-xl p-4 text-left transition flex items-center gap-3">
               <Building2 size={20} className="text-yellow-400 shrink-0"/>
-              <span className="font-semibold text-white">{fil.nome}</span>
+              <span className="font-semibold text-white">{f.nome}</span>
             </button>
           ))}
           {filiais.length === 0 && <p className="text-center text-gray-500 text-sm py-4">Nenhuma unidade cadastrada.</p>}
@@ -318,7 +315,7 @@ export default function PDVPage() {
     </div>
   )
 
-  // ════ TELA: LOGIN ════
+  // ════ LOGIN ════
   if (fase === 'login') return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
       <div className="bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-sm border border-gray-700">
@@ -358,7 +355,7 @@ export default function PDVPage() {
     </div>
   )
 
-  // ════ TELA: TROCAR SENHA ════
+  // ════ TROCAR SENHA ════
   if (fase === 'trocar_senha') return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
       <div className="bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-sm border border-yellow-500">
@@ -393,7 +390,7 @@ export default function PDVPage() {
     </div>
   )
 
-  // ════ TELA: ABERTURA DE CAIXA ════
+  // ════ ABERTURA DE CAIXA ════
   if (fase === 'caixa') return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
       <div className="bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-sm border border-gray-700">
@@ -453,7 +450,6 @@ export default function PDVPage() {
       {/* ── ABA CAIXA ── */}
       {aba === 'caixa' && (
         <div className="flex flex-1 overflow-hidden">
-
           {/* Produtos */}
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="p-3 border-b border-gray-700 flex items-center gap-2 bg-gray-800">
@@ -473,14 +469,14 @@ export default function PDVPage() {
                 ))}
                 {prodFiltrados.length === 0 && (
                   <p className="col-span-full text-center text-gray-500 text-sm py-8">
-                    {produtos.length === 0 ? 'Nenhum produto cadastrado nesta unidade.' : 'Nenhum produto encontrado.'}
+                    {produtos.length === 0 ? 'Nenhum produto disponível nesta unidade.' : 'Nenhum produto encontrado.'}
                   </p>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Carrinho + pagamento rápido */}
+          {/* Carrinho */}
           <div className="w-80 bg-gray-800 border-l border-gray-700 flex flex-col">
             <div className="p-3 border-b border-gray-700 flex items-center gap-2">
               <ShoppingCart size={16} className="text-yellow-400"/>
@@ -489,15 +485,11 @@ export default function PDVPage() {
                 <span className="ml-auto bg-yellow-400 text-gray-900 text-xs font-bold px-2 py-0.5 rounded-full">{carrinho.length}</span>
               )}
             </div>
-
-            {/* Cliente */}
             <div className="px-3 pt-2">
               <input value={clienteNome} onChange={e => setClienteNome(e.target.value)}
                 placeholder="👤 Cliente (opcional)"
                 className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-xs outline-none"/>
             </div>
-
-            {/* Itens */}
             <div className="flex-1 overflow-y-auto p-2 space-y-1">
               {carrinho.length === 0
                 ? <p className="text-center text-gray-500 text-xs mt-8">Clique nos produtos para adicionar</p>
@@ -522,23 +514,17 @@ export default function PDVPage() {
                 ))
               }
             </div>
-
-            {/* Total e pagamento rápido */}
             <div className="p-3 border-t border-gray-700 space-y-3">
-              {/* Desconto */}
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-400">Desconto R$</span>
                 <input type="number" step="0.01" value={desconto} onChange={e => setDesconto(e.target.value)}
                   placeholder="0,00" className="flex-1 bg-gray-700 border border-gray-600 text-white rounded px-2 py-1.5 text-xs outline-none text-right"/>
               </div>
-
-              {/* Total */}
               <div className="bg-gray-700 rounded-xl px-4 py-3 flex justify-between items-center">
                 <span className="text-sm font-bold text-gray-300">TOTAL</span>
                 <span className="text-2xl font-bold text-yellow-400">{formatBRL(total)}</span>
               </div>
-
-              {/* Botões de pagamento rápido */}
+              {/* Pagamento rápido */}
               <div className="grid grid-cols-2 gap-2">
                 <Btn onClick={() => finalizarVenda('dinheiro', total)} disabled={!carrinho.length || salvando}
                   className="bg-green-600 hover:bg-green-500 text-white flex items-center justify-center gap-1.5 py-3">
@@ -557,8 +543,6 @@ export default function PDVPage() {
                   <CreditCard size={16}/> Crédito
                 </Btn>
               </div>
-
-              {/* Misto + troco */}
               <Btn onClick={() => setModalPagMisto(true)} disabled={!carrinho.length || salvando}
                 className="w-full bg-gray-600 hover:bg-gray-500 text-white flex items-center justify-center gap-2 py-2.5">
                 🔀 Misto / Calcular Troco
@@ -574,18 +558,16 @@ export default function PDVPage() {
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <Package size={20} className="text-yellow-400"/> Pedir produtos à Matriz
           </h2>
-
           {pedidoEnviado && (
             <div className="bg-green-800 border border-green-600 rounded-xl p-4 flex items-center gap-2 text-green-300">
               <CheckCircle size={20}/> Pedido enviado! A Matriz receberá a solicitação.
             </div>
           )}
-
-          {/* Produtos cadastrados */}
+          {/* Produtos da Matriz */}
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
             <p className="text-sm font-semibold text-yellow-400 mb-3">📋 Produtos cadastrados na Matriz</p>
             {produtosPed.length === 0
-              ? <p className="text-xs text-gray-500 italic">Nenhum produto cadastrado na Matriz ainda.</p>
+              ? <p className="text-xs text-gray-500 italic">Nenhum produto cadastrado na Matriz.</p>
               : (
                 <div className="space-y-2">
                   {produtosPed.map(p => {
@@ -618,23 +600,20 @@ export default function PDVPage() {
               )
             }
           </div>
-
           {/* Outros */}
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
             <p className="text-sm font-semibold text-gray-300 mb-3">➕ Outros (produto não cadastrado)</p>
             <div className="flex gap-2">
-              <input value={outroNome} onChange={e => setOutroNome(e.target.value)}
-                placeholder="Descreva o produto..."
+              <input value={outroNome} onChange={e => setOutroNome(e.target.value)} placeholder="Descreva o produto..."
                 className="flex-1 bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm outline-none"/>
               <input type="number" min={1} value={outroQtd} onChange={e => setOutroQtd(Number(e.target.value))}
                 className="w-14 bg-gray-700 border border-gray-600 text-white rounded-lg px-2 py-2 text-sm outline-none text-center"/>
-              <input value={outroUnidade} onChange={e => setOutroUnidade(e.target.value)}
-                placeholder="un" className="w-14 bg-gray-700 border border-gray-600 text-white rounded-lg px-2 py-2 text-sm outline-none text-center"/>
+              <input value={outroUnidade} onChange={e => setOutroUnidade(e.target.value)} placeholder="un"
+                className="w-14 bg-gray-700 border border-gray-600 text-white rounded-lg px-2 py-2 text-sm outline-none text-center"/>
               <Btn onClick={addOutro} disabled={!outroNome.trim()} className="bg-gray-600 hover:bg-gray-500 text-white px-3">Add</Btn>
             </div>
           </div>
-
-          {/* Resumo do pedido */}
+          {/* Resumo */}
           {itensPed.length > 0 && (
             <div className="bg-gray-800 border border-yellow-500/30 rounded-xl p-4">
               <p className="text-sm font-semibold text-yellow-400 mb-3">🛒 Resumo ({itensPed.length} item(s))</p>
@@ -655,11 +634,9 @@ export default function PDVPage() {
               </div>
             </div>
           )}
-
           <textarea value={obsPed} onChange={e => setObsPed(e.target.value)} rows={2}
             placeholder="Observações (urgência, prazo...)..."
             className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-3 py-2 text-sm outline-none resize-none"/>
-
           <Btn onClick={enviarPedidoInterno} disabled={salvandoPed || !itensPed.length}
             className="w-full bg-yellow-400 hover:bg-yellow-300 text-gray-900 py-3 text-base">
             {salvandoPed ? 'Enviando...' : '📦 Enviar Pedido para a Matriz'}
@@ -703,18 +680,18 @@ export default function PDVPage() {
           <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-gray-700">
-                <tr>{['Produto','Qtd','Mínimo','Status'].map(h =>
+                <tr>{['Produto','Estoque','Mínimo','Status'].map(h =>
                   <th key={h} className="text-left px-4 py-2 text-xs font-semibold text-gray-400">{h}</th>
                 )}</tr>
               </thead>
               <tbody className="divide-y divide-gray-700">
-                {estoqueItems.map(e => {
-                  const baixo = Number(e.quantidade) <= Number(e.estoque_min)
+                {estoqueItems.map((e: any) => {
+                  const baixo = Number(e.estoque_atual) <= Number(e.estoque_minimo)
                   return (
                     <tr key={e.id} className="hover:bg-gray-700/50">
-                      <td className="px-4 py-2 text-white">{(e.produtos as any)?.nome}</td>
-                      <td className={`px-4 py-2 font-bold ${baixo ? 'text-red-400' : 'text-green-400'}`}>{e.quantidade}</td>
-                      <td className="px-4 py-2 text-gray-400">{e.estoque_min}</td>
+                      <td className="px-4 py-2 text-white">{e.produtos?.nome}</td>
+                      <td className={`px-4 py-2 font-bold ${baixo ? 'text-red-400' : 'text-green-400'}`}>{e.estoque_atual}</td>
+                      <td className="px-4 py-2 text-gray-400">{e.estoque_minimo}</td>
                       <td className="px-4 py-2">
                         {baixo
                           ? <span className="text-xs bg-red-900/50 text-red-400 px-2 py-0.5 rounded-full">⚠️ Baixo</span>
@@ -763,8 +740,8 @@ export default function PDVPage() {
               <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 text-xs text-gray-400 space-y-1">
                 <p>Unidade: <span className="text-yellow-400 font-medium">{filialSel?.nome}</span></p>
                 <p>Atendente: <span className="text-white font-medium">{atendente?.nome}</span></p>
-                <p>Abertura: <span className="text-white">{caixaAberto?.abertura_at ? new Date(caixaAberto.abertura_at).toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'}) : '-'}</span></p>
-                <p>Fundo de caixa: <span className="text-white">{formatBRL(caixaAberto?.valor_abertura || 0)}</span></p>
+                <p>Abertura: <span className="text-white">{caixaAberto?.abertura_at ? new Date(caixaAberto.abertura_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '-'}</span></p>
+                <p>Fundo: <span className="text-white">{formatBRL(caixaAberto?.valor_abertura||0)}</span></p>
               </div>
               <Btn onClick={() => setModalFechamento(true)} className="w-full bg-red-700 hover:bg-red-600 text-white py-3">Fechar Caixa</Btn>
             </div>
@@ -772,12 +749,12 @@ export default function PDVPage() {
         </div>
       )}
 
-      {/* Modal Misto / Troco */}
+      {/* Modal Misto/Troco */}
       {modalPagMisto && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-sm p-6 space-y-4">
             <div className="flex justify-between items-center">
-              <h3 className="text-lg font-bold text-white">Pagamento</h3>
+              <h3 className="text-lg font-bold text-white">Pagamento Misto</h3>
               <button onClick={() => setModalPagMisto(false)}><X size={20} className="text-gray-400"/></button>
             </div>
             <div className="bg-gray-700 rounded-xl p-4 text-center">
@@ -789,7 +766,7 @@ export default function PDVPage() {
                 <label className="text-xs text-gray-400 mb-1 block">💵 Dinheiro R$</label>
                 <Input type="number" step="0.01" value={valDinheiro} onChange={e => setValDinheiro(e.target.value)} placeholder="0,00"/>
                 {Number(valDinheiro) > 0 && (
-                  <p className="text-xs text-green-400 mt-1">Troco: {formatBRL(Math.max(Number(valDinheiro) - total, 0))}</p>
+                  <p className="text-xs text-green-400 mt-1">Troco: {formatBRL(Math.max(Number(valDinheiro)-total,0))}</p>
                 )}
               </div>
               <div>
