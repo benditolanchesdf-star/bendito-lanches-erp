@@ -9,6 +9,8 @@ import {
   AlertTriangle, RefreshCw, Eye, EyeOff, Lock, Building2,
 } from 'lucide-react'
 
+const MATRIZ_ID = '11111111-1111-1111-1111-111111111111'
+
 type Fase = 'filial' | 'login' | 'trocar_senha' | 'caixa' | 'pdv'
 type Aba  = 'caixa' | 'pedido_interno' | 'estoque' | 'resumo'
 type ItemCarrinho = { produto_id: string; nome: string; preco: number; quantidade: number }
@@ -47,8 +49,9 @@ export default function PDVPage() {
   // Caixa
   const [valorAbertura, setValorAbertura] = useState('')
 
-  // Produtos e carrinho
+  // Produtos caixa (da filial atual) e pedido (da Matriz)
   const [produtos, setProdutos] = useState<any[]>([])
+  const [produtosPed, setProdutosPed] = useState<any[]>([])
   const [busca, setBusca] = useState('')
   const [carrinho, setCarrinho] = useState<ItemCarrinho[]>([])
   const [desconto, setDesconto] = useState('')
@@ -72,21 +75,18 @@ export default function PDVPage() {
   const [salvandoPed, setSalvandoPed] = useState(false)
   const [pedidoEnviado, setPedidoEnviado] = useState(false)
 
-  // Estoque
+  // Estoque e alertas
   const [estoqueItems, setEstoqueItems] = useState<any[]>([])
   const [alertas, setAlertas] = useState<any[]>([])
   const [resumo, setResumo] = useState<any>(null)
 
-  // Carregar filiais ativas
   useEffect(() => {
     supabase.from('filiais').select('id, nome').eq('ativo', true).order('nome')
       .then(({ data }) => setFiliais(data || []))
   }, [])
 
-  // Ao selecionar filial, carregar atendentes autorizados
   async function selecionarFilial(f: any) {
     setFilialSel(f)
-    // Busca atendentes que têm essa filial autorizada
     const { data } = await supabase
       .from('atendentes_pdv')
       .select('*, atendente_filiais!inner(filial_id)')
@@ -97,7 +97,6 @@ export default function PDVPage() {
     setFase('login')
   }
 
-  // Login
   async function fazerLogin() {
     setErroLogin('')
     const at = atendentes.find(a => a.id === atendenteSel)
@@ -112,7 +111,6 @@ export default function PDVPage() {
     else setFase('caixa')
   }
 
-  // Trocar senha
   async function trocarSenha() {
     setErroSenha('')
     if (novaSenha.length < 4) { setErroSenha('Mínimo 4 caracteres.'); return }
@@ -125,7 +123,6 @@ export default function PDVPage() {
     setFase('caixa')
   }
 
-  // Abrir caixa
   async function abrirCaixa() {
     const { data } = await supabase.from('caixas_pdv').insert({
       filial_id: filialSel.id, atendente_id: atendente.id,
@@ -136,26 +133,24 @@ export default function PDVPage() {
     setFase('pdv')
   }
 
- async function carregarProdutos() {
-  // Produtos para o caixa — da filial atual
-  const { data: prodCaixa } = await supabase.from('produtos')
-    .select('id, nome, preco_venda, unidade').eq('ativo', true)
-    .eq('filial_id', filialSel.id).order('nome')
-  setProdutos(prodCaixa || [])
+  async function carregarProdutos() {
+    // Produtos para o caixa — da filial selecionada
+    const { data: prodCaixa } = await supabase.from('produtos')
+      .select('id, nome, preco_venda, unidade').eq('ativo', true)
+      .eq('filial_id', filialSel.id).order('nome')
+    setProdutos(prodCaixa || [])
 
-  // Produtos para pedido à Matriz — sempre da Matriz
-  const { data: prodMatriz } = await supabase.from('produtos')
-    .select('id, nome, preco_venda, unidade').eq('ativo', true)
-    .eq('filial_id', '11111111-1111-1111-1111-111111111111').order('nome')
-  setProdutosPed(prodMatriz || [])
-}
-  
+    // Produtos para pedido à Matriz — sempre da Matriz
+    const { data: prodMatriz } = await supabase.from('produtos')
+      .select('id, nome, preco_venda, unidade').eq('ativo', true)
+      .eq('filial_id', MATRIZ_ID).order('nome')
+    setProdutosPed(prodMatriz || [])
+  }
+
   async function carregarEstoque() {
     const [{ data: ef }, { data: al }] = await Promise.all([
-      supabase.from('estoque_filial').select('*, produtos(nome, unidade)')
-        .eq('filial_id', filialSel.id),
-      supabase.from('vw_alertas_estoque').select('*')
-        .eq('filial_id', filialSel.id).neq('nivel_alerta', 'normal'),
+      supabase.from('estoque_filial').select('*, produtos(nome, unidade)').eq('filial_id', filialSel.id),
+      supabase.from('vw_alertas_estoque').select('*').eq('filial_id', filialSel.id).neq('nivel_alerta', 'normal'),
     ])
     setEstoqueItems(ef || [])
     setAlertas(al || [])
@@ -181,7 +176,6 @@ export default function PDVPage() {
     if (aba === 'resumo') carregarResumo()
   }, [aba, fase])
 
-  // Carrinho
   const subtotal = carrinho.reduce((s, i) => s + i.preco * i.quantidade, 0)
   const descontoVal = Number(desconto) || 0
   const total = Math.max(subtotal - descontoVal, 0)
@@ -250,9 +244,8 @@ export default function PDVPage() {
   async function enviarPedidoInterno() {
     if (!itensPed.length) return
     setSalvandoPed(true)
-    const matrizId = '11111111-1111-1111-1111-111111111111'
     const { data: ped } = await supabase.from('pedidos_internos').insert({
-      filial_origem: filialSel.id, filial_destino: matrizId, observacoes: obsPed || null,
+      filial_origem: filialSel.id, filial_destino: MATRIZ_ID, observacoes: obsPed || null,
     }).select('id').single()
     if (ped) {
       await supabase.from('pedido_interno_itens').insert(
@@ -279,9 +272,7 @@ export default function PDVPage() {
 
   const prodFiltrados = produtos.filter(p => p.nome.toLowerCase().includes(busca.toLowerCase()))
 
-  // ════════════════════════════════════════════════
-  // TELA: SELEÇÃO DE FILIAL
-  // ════════════════════════════════════════════════
+  // ════ TELA: SELEÇÃO DE FILIAL ════
   if (fase === 'filial') return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
       <div className="bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-sm border border-gray-700">
@@ -299,24 +290,18 @@ export default function PDVPage() {
               <span className="font-semibold text-white">{f.nome}</span>
             </button>
           ))}
-          {filiais.length === 0 && (
-            <p className="text-center text-gray-500 text-sm py-4">Nenhuma unidade cadastrada.</p>
-          )}
+          {filiais.length === 0 && <p className="text-center text-gray-500 text-sm py-4">Nenhuma unidade cadastrada.</p>}
         </div>
       </div>
     </div>
   )
 
-  // ════════════════════════════════════════════════
-  // TELA: LOGIN DO ATENDENTE
-  // ════════════════════════════════════════════════
+  // ════ TELA: LOGIN ════
   if (fase === 'login') return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
       <div className="bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-sm border border-gray-700">
         <button onClick={() => { setFase('filial'); setAtendenteSel(''); setSenhaInput('') }}
-          className="text-xs text-gray-400 hover:text-gray-200 mb-4 flex items-center gap-1">
-          ← Trocar unidade
-        </button>
+          className="text-xs text-gray-400 hover:text-gray-200 mb-4 flex items-center gap-1">← Trocar unidade</button>
         <div className="text-center mb-6">
           <div className="bg-yellow-400/10 border border-yellow-400/30 rounded-xl px-4 py-2 inline-block mb-4">
             <p className="text-yellow-400 font-bold text-sm">🏢 {filialSel?.nome}</p>
@@ -331,34 +316,27 @@ export default function PDVPage() {
               <option value="">Selecione...</option>
               {atendentes.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
             </select>
-            {atendentes.length === 0 && (
-              <p className="text-xs text-orange-400 mt-1">Nenhum atendente autorizado para esta unidade.</p>
-            )}
+            {atendentes.length === 0 && <p className="text-xs text-orange-400 mt-1">Nenhum atendente autorizado para esta unidade.</p>}
           </div>
           <div>
             <label className="text-xs text-gray-400 mb-1 block">Senha PDV</label>
             <div className="relative">
               <Input type={showSenha ? 'text' : 'password'} value={senhaInput}
                 onChange={e => setSenhaInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && fazerLogin()} placeholder="••••" />
-              <button onClick={() => setShowSenha(!showSenha)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
+                onKeyDown={e => e.key === 'Enter' && fazerLogin()} placeholder="••••"/>
+              <button onClick={() => setShowSenha(!showSenha)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
                 {showSenha ? <EyeOff size={16}/> : <Eye size={16}/>}
               </button>
             </div>
           </div>
           {erroLogin && <p className="text-xs text-red-400 bg-red-900/30 p-2 rounded">{erroLogin}</p>}
-          <Btn onClick={fazerLogin} className="w-full bg-yellow-400 hover:bg-yellow-300 text-gray-900 py-3">
-            Entrar no Caixa
-          </Btn>
+          <Btn onClick={fazerLogin} className="w-full bg-yellow-400 hover:bg-yellow-300 text-gray-900 py-3">Entrar no Caixa</Btn>
         </div>
       </div>
     </div>
   )
 
-  // ════════════════════════════════════════════════
-  // TELA: PRIMEIRO ACESSO — TROCAR SENHA
-  // ════════════════════════════════════════════════
+  // ════ TELA: TROCAR SENHA ════
   if (fase === 'trocar_senha') return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
       <div className="bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-sm border border-yellow-500">
@@ -374,16 +352,14 @@ export default function PDVPage() {
             <div className="relative">
               <Input type={showNovaSenha ? 'text' : 'password'} value={novaSenha}
                 onChange={e => setNovaSenha(e.target.value)} placeholder="Digite sua nova senha"/>
-              <button onClick={() => setShowNovaSenha(!showNovaSenha)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
+              <button onClick={() => setShowNovaSenha(!showNovaSenha)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
                 {showNovaSenha ? <EyeOff size={16}/> : <Eye size={16}/>}
               </button>
             </div>
           </div>
           <div>
             <label className="text-xs text-gray-400 mb-1 block">Confirmar senha</label>
-            <Input type="password" value={confirmaSenha}
-              onChange={e => setConfirmaSenha(e.target.value)} placeholder="Repita a senha"/>
+            <Input type="password" value={confirmaSenha} onChange={e => setConfirmaSenha(e.target.value)} placeholder="Repita a senha"/>
           </div>
           {erroSenha && <p className="text-xs text-red-400 bg-red-900/30 p-2 rounded">{erroSenha}</p>}
           <Btn onClick={trocarSenha} disabled={salvandoSenha || !novaSenha || !confirmaSenha}
@@ -395,9 +371,7 @@ export default function PDVPage() {
     </div>
   )
 
-  // ════════════════════════════════════════════════
-  // TELA: ABERTURA DE CAIXA
-  // ════════════════════════════════════════════════
+  // ════ TELA: ABERTURA DE CAIXA ════
   if (fase === 'caixa') return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
       <div className="bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-sm border border-gray-700">
@@ -409,24 +383,16 @@ export default function PDVPage() {
         <div className="space-y-4">
           <div>
             <label className="text-xs text-gray-400 mb-1 block">Valor inicial em caixa (troco) R$</label>
-            <Input type="number" step="0.01" value={valorAbertura}
-              onChange={e => setValorAbertura(e.target.value)} placeholder="0,00"/>
+            <Input type="number" step="0.01" value={valorAbertura} onChange={e => setValorAbertura(e.target.value)} placeholder="0,00"/>
           </div>
-          <Btn onClick={abrirCaixa} className="w-full bg-green-500 hover:bg-green-400 text-white py-3">
-            ✅ Abrir Caixa e Iniciar Vendas
-          </Btn>
-          <Btn onClick={() => { setFase('login'); setAtendente(null) }}
-            className="w-full bg-gray-700 hover:bg-gray-600 text-gray-300">
-            Voltar
-          </Btn>
+          <Btn onClick={abrirCaixa} className="w-full bg-green-500 hover:bg-green-400 text-white py-3">✅ Abrir Caixa</Btn>
+          <Btn onClick={() => { setFase('login'); setAtendente(null) }} className="w-full bg-gray-700 hover:bg-gray-600 text-gray-300">Voltar</Btn>
         </div>
       </div>
     </div>
   )
 
-  // ════════════════════════════════════════════════
-  // TELA: PDV PRINCIPAL
-  // ════════════════════════════════════════════════
+  // ════ PDV PRINCIPAL ════
   return (
     <div className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden">
 
@@ -434,20 +400,15 @@ export default function PDVPage() {
       <div className="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
           <span className="text-xl font-bold text-yellow-400">🍕</span>
-          <span className="text-xs bg-yellow-400/10 border border-yellow-400/30 px-2 py-0.5 rounded-full text-yellow-400 font-semibold">
-            {filialSel?.nome}
-          </span>
-          <span className="text-xs bg-gray-700 px-2 py-0.5 rounded-full text-gray-300 flex items-center gap-1">
-            <User size={11}/> {atendente?.nome}
-          </span>
+          <span className="text-xs bg-yellow-400/10 border border-yellow-400/30 px-2 py-0.5 rounded-full text-yellow-400 font-semibold">{filialSel?.nome}</span>
+          <span className="text-xs bg-gray-700 px-2 py-0.5 rounded-full text-gray-300 flex items-center gap-1"><User size={11}/> {atendente?.nome}</span>
           {alertas.length > 0 && (
             <span className="text-xs bg-red-600 px-2 py-0.5 rounded-full font-bold flex items-center gap-1 animate-pulse">
               <AlertTriangle size={10}/> {alertas.length} alerta(s)
             </span>
           )}
         </div>
-        <Btn onClick={() => setModalFechamento(true)}
-          className="bg-red-700 hover:bg-red-600 text-white text-xs px-3 py-1.5 flex items-center gap-1">
+        <Btn onClick={() => setModalFechamento(true)} className="bg-red-700 hover:bg-red-600 text-white text-xs px-3 py-1.5 flex items-center gap-1">
           <LogOut size={13}/> Fechar Caixa
         </Btn>
       </div>
@@ -535,17 +496,10 @@ export default function PDVPage() {
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-400">Desconto R$</span>
                 <input type="number" step="0.01" value={desconto} onChange={e => setDesconto(e.target.value)}
-                  placeholder="0,00"
-                  className="flex-1 bg-gray-700 border border-gray-600 text-white rounded px-2 py-1 text-xs outline-none text-right"/>
+                  placeholder="0,00" className="flex-1 bg-gray-700 border border-gray-600 text-white rounded px-2 py-1 text-xs outline-none text-right"/>
               </div>
-              <div className="flex justify-between text-xs text-gray-400">
-                <span>Subtotal</span><span>{formatBRL(subtotal)}</span>
-              </div>
-              {descontoVal > 0 && (
-                <div className="flex justify-between text-xs text-red-400">
-                  <span>Desconto</span><span>- {formatBRL(descontoVal)}</span>
-                </div>
-              )}
+              <div className="flex justify-between text-xs text-gray-400"><span>Subtotal</span><span>{formatBRL(subtotal)}</span></div>
+              {descontoVal > 0 && <div className="flex justify-between text-xs text-red-400"><span>Desconto</span><span>- {formatBRL(descontoVal)}</span></div>}
               <div className="flex justify-between font-bold text-base border-t border-gray-600 pt-2">
                 <span>TOTAL</span><span className="text-yellow-400">{formatBRL(total)}</span>
               </div>
@@ -574,20 +528,23 @@ export default function PDVPage() {
             <div className="flex gap-2">
               <select value={prodSelPed} onChange={e => setProdSelPed(e.target.value)}
                 className="flex-1 bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm outline-none">
-                <option value="">Selecione...</option>
-                {produtos.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                <option value="">Selecione um produto da Matriz...</option>
+                {produtosPed.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
               </select>
               <input type="number" min={1} value={qtdSelPed} onChange={e => setQtdSelPed(Number(e.target.value))}
                 className="w-16 bg-gray-700 border border-gray-600 text-white rounded-lg px-2 py-2 text-sm outline-none text-center"/>
               <Btn onClick={() => {
                 if (!prodSelPed) return
-                const p = produtos.find(x => x.id === prodSelPed)
+                const p = produtosPed.find(x => x.id === prodSelPed)
                 if (!p) return
                 setItensPed(prev => [...prev.filter(i => i.produto_id !== prodSelPed),
                   { produto_id: prodSelPed, nome: p.nome, quantidade: qtdSelPed, unidade: p.unidade || 'un' }])
                 setProdSelPed(''); setQtdSelPed(1)
               }} className="bg-yellow-400 hover:bg-yellow-300 text-gray-900 px-3">Add</Btn>
             </div>
+            {produtosPed.length === 0 && (
+              <p className="text-xs text-orange-400 mt-2">Nenhum produto cadastrado na Matriz ainda.</p>
+            )}
           </div>
           {itensPed.length > 0 && (
             <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-4 space-y-2">
@@ -626,9 +583,7 @@ export default function PDVPage() {
           </div>
           {alertas.length > 0 && (
             <div className="mb-4 space-y-2">
-              <p className="text-xs font-bold text-red-400 flex items-center gap-1 mb-2">
-                <AlertTriangle size={13}/> ALERTAS
-              </p>
+              <p className="text-xs font-bold text-red-400 flex items-center gap-1 mb-2"><AlertTriangle size={13}/> ALERTAS</p>
               {alertas.map((a, i) => {
                 const cores: Record<string,string> = {
                   sem_estoque: 'bg-red-900/50 border-red-600 text-red-300',
@@ -715,9 +670,7 @@ export default function PDVPage() {
                 <p>Abertura: <span className="text-white">{caixaAberto?.abertura_at ? new Date(caixaAberto.abertura_at).toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'}) : '-'}</span></p>
                 <p>Fundo de caixa: <span className="text-white">{formatBRL(caixaAberto?.valor_abertura || 0)}</span></p>
               </div>
-              <Btn onClick={() => setModalFechamento(true)} className="w-full bg-red-700 hover:bg-red-600 text-white py-3">
-                Fechar Caixa
-              </Btn>
+              <Btn onClick={() => setModalFechamento(true)} className="w-full bg-red-700 hover:bg-red-600 text-white py-3">Fechar Caixa</Btn>
             </div>
           )}
         </div>
@@ -783,9 +736,7 @@ export default function PDVPage() {
             <CheckCircle size={52} className="text-green-400 mx-auto"/>
             <h3 className="text-xl font-bold text-white">Venda #{vendaConcluida.numero}</h3>
             <p className="text-4xl font-bold text-yellow-400">{formatBRL(vendaConcluida.total)}</p>
-            {vendaConcluida.troco > 0 && (
-              <p className="text-lg font-bold text-green-400">Troco: {formatBRL(vendaConcluida.troco)}</p>
-            )}
+            {vendaConcluida.troco > 0 && <p className="text-lg font-bold text-green-400">Troco: {formatBRL(vendaConcluida.troco)}</p>}
             <Btn onClick={() => setVendaConcluida(null)} className="w-full bg-yellow-400 hover:bg-yellow-300 text-gray-900 py-3 text-base mt-2">
               Nova Venda
             </Btn>
