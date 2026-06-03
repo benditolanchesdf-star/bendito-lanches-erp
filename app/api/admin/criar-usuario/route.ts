@@ -1,64 +1,57 @@
-import { createClient } from '@supabase/supabase-js'
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
   try {
     const { nome, email, senha, papel, filial_id } = await request.json()
 
-    if (!nome || !email || !senha) {
-      return NextResponse.json({ error: 'Nome, email e senha são obrigatórios.' }, { status: 400 })
+    if (!nome || !email || !papel) {
+      return NextResponse.json({ error: 'Nome, email e papel são obrigatórios.' }, { status: 400 })
     }
 
-    const supabaseAdmin = createClient(
+    const cookieStore = await cookies()
+    const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      { auth: { autoRefreshToken: false, persistSession: false } }
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() { return cookieStore.getAll() },
+          setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
+            try {
+              cookiesToSet.forEach(({ name, value, options }) =>
+                cookieStore.set(name, value, options)
+              )
+            } catch {}
+          },
+        },
+      }
     )
 
-    const filialFinal = filial_id || '11111111-1111-1111-1111-111111111111'
-
-    // Criar usuário no Auth
-    const { data: novoUser, error: errUser } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password: senha,
-      email_confirm: true,
-      user_metadata: { nome },
-    })
-
-    if (errUser || !novoUser.user) {
-      return NextResponse.json({ error: errUser?.message || 'Erro ao criar usuário.' }, { status: 400 })
+    // Verificar se o usuário logado é admin
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
     }
 
-    const userId = novoUser.user.id
-
-    // Criar profile
-    await supabaseAdmin.from('profiles').upsert({
-      id: userId, nome, papel, filial_id: filialFinal, ativo: true,
+    // Chamar função SQL SECURITY DEFINER que cria o usuário
+    const { data, error } = await supabase.rpc('criar_usuario_admin', {
+      p_email: email,
+      p_nome: nome,
+      p_papel: papel,
+      p_filial_id: filial_id || null,
     })
 
-    // Criar papel inicial em usuario_papeis
-    await supabaseAdmin.from('usuario_papeis').insert({
-      user_id: userId, papel, filial_id: filial_id || null,
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+
+    return NextResponse.json({
+      success: true,
+      userId: (data as any)?.userId,
+      senha_temporaria: 'Mudar123!',
+      message: `Usuário criado! Senha temporária: Mudar123! — o usuário deverá alterá-la no primeiro acesso.`
     })
-
-    // Se for vendedor, criar registro em vendedores
-    if (papel === 'vendedor') {
-      await supabaseAdmin.from('vendedores').insert({
-        nome, usuario_id: userId, filial_id: filialFinal, ativo: true,
-      })
-    }
-
-    // Criar registro em public.usuarios (compatibilidade)
-    const { data: usuarioExiste } = await supabaseAdmin
-      .from('usuarios').select('id').eq('email', email).maybeSingle()
-
-    if (!usuarioExiste) {
-      await supabaseAdmin.from('usuarios').insert({
-        id: userId, nome, email, perfil: papel, ativo: true, filial_id: filialFinal,
-      })
-    }
-
-    return NextResponse.json({ success: true, userId })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
