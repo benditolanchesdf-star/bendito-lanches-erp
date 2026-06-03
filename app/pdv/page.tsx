@@ -5,8 +5,9 @@ import { createClient } from '@/lib/supabase/client'
 import { formatBRL } from '@/lib/constants'
 import {
   Search, Plus, Minus, Trash2, ShoppingCart, X, CheckCircle,
-  User, LogOut, Package, BarChart2, CreditCard,
-  AlertTriangle, RefreshCw, Eye, EyeOff, Lock, Building2,
+  User, LogOut, Package, BarChart2, RefreshCw,
+  Eye, EyeOff, Lock, Building2, AlertTriangle,
+  Banknote, Smartphone, CreditCard,
 } from 'lucide-react'
 
 const MATRIZ_ID = '11111111-1111-1111-1111-111111111111'
@@ -50,32 +51,28 @@ export default function PDVPage() {
   // Caixa
   const [valorAbertura, setValorAbertura] = useState('')
 
-  // Produtos
+  // Produtos — preco_varejo é o campo correto
   const [produtos, setProdutos] = useState<any[]>([])
   const [produtosPed, setProdutosPed] = useState<any[]>([])
   const [busca, setBusca] = useState('')
   const [carrinho, setCarrinho] = useState<ItemCarrinho[]>([])
-  const [desconto, setDesconto] = useState('')
   const [clienteNome, setClienteNome] = useState('')
+  const [desconto, setDesconto] = useState('')
 
-  // Pagamento
-  const [modalPag, setModalPag] = useState(false)
-  const [formaPag, setFormaPag] = useState<'dinheiro'|'pix'|'credito'|'debito'|'misto'>('dinheiro')
-  const [valDinheiro, setValDinheiro] = useState('')
-  const [valPix, setValPix] = useState('')
-  const [valCartao, setValCartao] = useState('')
+  // Pagamento rápido
   const [salvando, setSalvando] = useState(false)
   const [vendaConcluida, setVendaConcluida] = useState<any>(null)
   const [modalFechamento, setModalFechamento] = useState(false)
+  const [modalPagMisto, setModalPagMisto] = useState(false)
+  const [valDinheiro, setValDinheiro] = useState('')
+  const [valPix, setValPix] = useState('')
+  const [valCartao, setValCartao] = useState('')
 
   // Pedido interno
   const [itensPed, setItensPed] = useState<ItemPedido[]>([])
-  const [prodSelPed, setProdSelPed] = useState('')
-  const [qtdSelPed, setQtdSelPed] = useState(1)
   const [obsPed, setObsPed] = useState('')
   const [salvandoPed, setSalvandoPed] = useState(false)
   const [pedidoEnviado, setPedidoEnviado] = useState(false)
-  // Campo "Outros"
   const [outroNome, setOutroNome] = useState('')
   const [outroQtd, setOutroQtd] = useState(1)
   const [outroUnidade, setOutroUnidade] = useState('un')
@@ -109,10 +106,23 @@ export default function PDVPage() {
     setAtendente(at)
     if (at.primeiro_acesso) { setFase('trocar_senha'); return }
     const { data: caixa } = await supabase.from('caixas_pdv')
-      .select('*').eq('filial_id', filialSel.id)
-      .eq('atendente_id', at.id).eq('status', 'aberto').maybeSingle()
-    if (caixa) { setCaixaAberto(caixa); await carregarProdutos(); setFase('pdv') }
+      .select('*').eq('filial_id', f.id).eq('atendente_id', at.id).eq('status', 'aberto').maybeSingle()
+    if (caixa) { setCaixaAberto(caixa); await carregarProdutos(f); setFase('pdv') }
     else setFase('caixa')
+  }
+
+  // Corrigido: recebe filial como parâmetro pois filialSel pode não estar atualizado ainda
+  async function carregarProdutos(f: any) {
+    const [{ data: prodCaixa }, { data: prodMatriz }] = await Promise.all([
+      // Produtos do caixa — da filial selecionada, usando preco_varejo
+      supabase.from('produtos').select('id, nome, preco_varejo, unidade_medida')
+        .eq('ativo', true).eq('filial_id', f.id).order('nome'),
+      // Produtos para pedido — sempre da Matriz
+      supabase.from('produtos').select('id, nome, unidade_medida')
+        .eq('ativo', true).eq('filial_id', MATRIZ_ID).order('nome'),
+    ])
+    setProdutos(prodCaixa || [])
+    setProdutosPed(prodMatriz || [])
   }
 
   async function trocarSenha() {
@@ -123,8 +133,7 @@ export default function PDVPage() {
     setSalvandoSenha(true)
     await supabase.from('atendentes_pdv').update({ senha_pdv: novaSenha, primeiro_acesso: false }).eq('id', atendente.id)
     setAtendente({ ...atendente, senha_pdv: novaSenha, primeiro_acesso: false })
-    setSalvandoSenha(false)
-    setFase('caixa')
+    setSalvandoSenha(false); setFase('caixa')
   }
 
   async function abrirCaixa() {
@@ -133,29 +142,16 @@ export default function PDVPage() {
       valor_abertura: Number(valorAbertura) || 0, status: 'aberto',
     }).select('*').single()
     setCaixaAberto(data)
-    await carregarProdutos()
+    await carregarProdutos(filialSel)
     setFase('pdv')
-  }
-
-  async function carregarProdutos() {
-    const { data: prodCaixa } = await supabase.from('produtos')
-      .select('id, nome, preco_venda, unidade').eq('ativo', true)
-      .eq('filial_id', filialSel.id).order('nome')
-    setProdutos(prodCaixa || [])
-
-    const { data: prodMatriz } = await supabase.from('produtos')
-      .select('id, nome, unidade').eq('ativo', true)
-      .eq('filial_id', MATRIZ_ID).order('nome')
-    setProdutosPed(prodMatriz || [])
   }
 
   async function carregarEstoque() {
     const [{ data: ef }, { data: al }] = await Promise.all([
-      supabase.from('estoque_filial').select('*, produtos(nome, unidade)').eq('filial_id', filialSel.id),
+      supabase.from('estoque_filial').select('*, produtos(nome, unidade_medida)').eq('filial_id', filialSel.id),
       supabase.from('vw_alertas_estoque').select('*').eq('filial_id', filialSel.id).neq('nivel_alerta', 'normal'),
     ])
-    setEstoqueItems(ef || [])
-    setAlertas(al || [])
+    setEstoqueItems(ef || []); setAlertas(al || [])
   }
 
   async function carregarResumo() {
@@ -182,80 +178,39 @@ export default function PDVPage() {
   const subtotal = carrinho.reduce((s, i) => s + i.preco * i.quantidade, 0)
   const descontoVal = Number(desconto) || 0
   const total = Math.max(subtotal - descontoVal, 0)
-  const troco = formaPag === 'dinheiro' ? Math.max((Number(valDinheiro) || 0) - total, 0) : 0
+  const troco = Math.max((Number(valDinheiro) || 0) - total, 0)
 
   function addProduto(p: any) {
     setCarrinho(prev => {
       const ex = prev.find(i => i.produto_id === p.id)
       if (ex) return prev.map(i => i.produto_id === p.id ? { ...i, quantidade: i.quantidade + 1 } : i)
-      return [...prev, { produto_id: p.id, nome: p.nome, preco: Number(p.preco_venda || 0), quantidade: 1 }]
+      return [...prev, { produto_id: p.id, nome: p.nome, preco: Number(p.preco_varejo || 0), quantidade: 1 }]
     })
   }
 
   function updateQtd(id: string, delta: number) {
-    setCarrinho(prev => prev.map(i => i.produto_id === id
-      ? { ...i, quantidade: Math.max(1, i.quantidade + delta) } : i))
+    setCarrinho(prev => prev.map(i => i.produto_id === id ? { ...i, quantidade: Math.max(1, i.quantidade + delta) } : i))
   }
 
-  // Pedido interno — adicionar produto cadastrado
-  function addProdutoPed() {
-    if (!prodSelPed) return
-    const p = produtosPed.find(x => x.id === prodSelPed)
-    if (!p) return
-    setItensPed(prev => {
-      const ex = prev.find(i => i.produto_id === prodSelPed)
-      if (ex) return prev.map(i => i.produto_id === prodSelPed ? { ...i, quantidade: i.quantidade + qtdSelPed } : i)
-      return [...prev, { produto_id: prodSelPed, nome: p.nome, quantidade: qtdSelPed, unidade: p.unidade || 'un', outros: false }]
-    })
-    setProdSelPed(''); setQtdSelPed(1)
-  }
-
-  // Pedido interno — adicionar item "outros"
-  function addOutro() {
-    if (!outroNome.trim()) return
-    setItensPed(prev => [...prev, {
-      produto_id: null, nome: outroNome.trim(),
-      quantidade: outroQtd, unidade: outroUnidade, outros: true,
-    }])
-    setOutroNome(''); setOutroQtd(1); setOutroUnidade('un')
-  }
-
-  async function enviarPedidoInterno() {
-    if (!itensPed.length) return
-    setSalvandoPed(true)
-    const { data: ped } = await supabase.from('pedidos_internos').insert({
-      filial_origem: filialSel.id, filial_destino: MATRIZ_ID, observacoes: obsPed || null,
-    }).select('id').single()
-    if (ped) {
-      await supabase.from('pedido_interno_itens').insert(
-        itensPed.map(i => ({
-          pedido_interno_id: ped.id,
-          produto_id: i.produto_id || null,
-          quantidade_pedida: i.quantidade,
-          unidade: i.unidade,
-          observacao: i.outros ? `[OUTRO] ${i.nome}` : null,
-        }))
-      )
-    }
-    setSalvandoPed(false); setItensPed([]); setObsPed('')
-    setPedidoEnviado(true)
-    setTimeout(() => setPedidoEnviado(false), 3000)
-  }
-
-  async function finalizarVenda() {
+  // Finalizar venda com forma de pagamento
+  async function finalizarVenda(forma: 'dinheiro' | 'pix' | 'credito' | 'debito' | 'misto', vDin?: number) {
     if (!carrinho.length) return
     setSalvando(true)
     const vPag = {
-      dinheiro: formaPag === 'dinheiro' ? total : formaPag === 'misto' ? Number(valDinheiro)||0 : 0,
-      pix:      formaPag === 'pix'      ? total : formaPag === 'misto' ? Number(valPix)||0      : 0,
-      cartao:   ['credito','debito'].includes(formaPag) ? total : formaPag === 'misto' ? Number(valCartao)||0 : 0,
+      dinheiro: forma === 'dinheiro' ? (vDin ?? total) : forma === 'misto' ? Number(valDinheiro)||0 : 0,
+      pix:      forma === 'pix'      ? total            : forma === 'misto' ? Number(valPix)||0      : 0,
+      cartao:   ['credito','debito'].includes(forma)    ? total : forma === 'misto' ? Number(valCartao)||0 : 0,
     }
+    const trocoFinal = forma === 'dinheiro' ? Math.max((vDin ?? total) - total, 0) : 0
+
     const { data: venda } = await supabase.from('vendas_pdv').insert({
       filial_id: filialSel.id, caixa_id: caixaAberto.id, atendente_id: atendente.id,
       cliente_nome: clienteNome || null, subtotal, desconto: descontoVal, total,
-      forma_pagamento: formaPag,
-      valor_dinheiro: vPag.dinheiro, valor_pix: vPag.pix, valor_cartao: vPag.cartao, troco,
+      forma_pagamento: forma,
+      valor_dinheiro: vPag.dinheiro, valor_pix: vPag.pix, valor_cartao: vPag.cartao,
+      troco: trocoFinal,
     }).select('*').single()
+
     if (venda) {
       await supabase.from('venda_pdv_itens').insert(
         carrinho.map(i => ({
@@ -283,10 +238,45 @@ export default function PDVPage() {
       await supabase.from('caixas_pdv').update(novo).eq('id', cx.id)
       setCaixaAberto({ ...cx, ...novo })
     }
-    setVendaConcluida({ ...venda, troco })
+
+    setVendaConcluida({ ...venda, troco: trocoFinal })
     setCarrinho([]); setDesconto(''); setClienteNome('')
     setValDinheiro(''); setValPix(''); setValCartao('')
-    setModalPag(false); setSalvando(false)
+    setModalPagMisto(false); setSalvando(false)
+  }
+
+  // Pedido interno
+  function addProdutoPed(p: any) {
+    setItensPed(prev => {
+      const ex = prev.find(i => i.produto_id === p.id)
+      if (ex) return prev.map(i => i.produto_id === p.id ? { ...i, quantidade: i.quantidade + 1 } : i)
+      return [...prev, { produto_id: p.id, nome: p.nome, quantidade: 1, unidade: p.unidade_medida || 'un', outros: false }]
+    })
+  }
+
+  function addOutro() {
+    if (!outroNome.trim()) return
+    setItensPed(prev => [...prev, { produto_id: null, nome: outroNome.trim(), quantidade: outroQtd, unidade: outroUnidade, outros: true }])
+    setOutroNome(''); setOutroQtd(1); setOutroUnidade('un')
+  }
+
+  async function enviarPedidoInterno() {
+    if (!itensPed.length) return
+    setSalvandoPed(true)
+    const { data: ped } = await supabase.from('pedidos_internos').insert({
+      filial_origem: filialSel.id, filial_destino: MATRIZ_ID, observacoes: obsPed || null,
+    }).select('id').single()
+    if (ped) {
+      await supabase.from('pedido_interno_itens').insert(
+        itensPed.map(i => ({
+          pedido_interno_id: ped.id, produto_id: i.produto_id || null,
+          quantidade_pedida: i.quantidade, unidade: i.unidade,
+          observacao: i.outros ? `[OUTRO] ${i.nome}` : null,
+        }))
+      )
+    }
+    setSalvandoPed(false); setItensPed([]); setObsPed('')
+    setPedidoEnviado(true); setTimeout(() => setPedidoEnviado(false), 3000)
   }
 
   async function fecharCaixa() {
@@ -298,6 +288,9 @@ export default function PDVPage() {
     setFase('filial'); setAtendente(null); setCaixaAberto(null)
     setCarrinho([]); setAtendenteSel(''); setSenhaInput(''); setFilialSel(null)
   }
+
+  // Variável auxiliar para fazerLogin (precisa de filialSel)
+  const f = filialSel
 
   const prodFiltrados = produtos.filter(p => p.nome.toLowerCase().includes(busca.toLowerCase()))
 
@@ -312,11 +305,11 @@ export default function PDVPage() {
         </div>
         <p className="text-xs text-gray-400 text-center mb-4">Selecione a unidade</p>
         <div className="space-y-3">
-          {filiais.map(f => (
-            <button key={f.id} onClick={() => selecionarFilial(f)}
+          {filiais.map(fil => (
+            <button key={fil.id} onClick={() => selecionarFilial(fil)}
               className="w-full bg-gray-700 hover:bg-gray-600 border border-gray-600 hover:border-yellow-400 rounded-xl p-4 text-left transition flex items-center gap-3">
               <Building2 size={20} className="text-yellow-400 shrink-0"/>
-              <span className="font-semibold text-white">{f.nome}</span>
+              <span className="font-semibold text-white">{fil.nome}</span>
             </button>
           ))}
           {filiais.length === 0 && <p className="text-center text-gray-500 text-sm py-4">Nenhuma unidade cadastrada.</p>}
@@ -345,7 +338,7 @@ export default function PDVPage() {
               <option value="">Selecione...</option>
               {atendentes.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
             </select>
-            {atendentes.length === 0 && <p className="text-xs text-orange-400 mt-1">Nenhum atendente autorizado para esta unidade.</p>}
+            {atendentes.length === 0 && <p className="text-xs text-orange-400 mt-1">Nenhum atendente autorizado.</p>}
           </div>
           <div>
             <label className="text-xs text-gray-400 mb-1 block">Senha PDV</label>
@@ -448,7 +441,7 @@ export default function PDVPage() {
           { key: 'caixa',          label: '🛒 Caixa' },
           { key: 'pedido_interno', label: '📦 Pedir à Matriz' },
           { key: 'estoque',        label: '📊 Estoque' },
-          { key: 'resumo',         label: '💵 Resumo do Dia' },
+          { key: 'resumo',         label: '💵 Resumo' },
         ] as {key:Aba;label:string}[]).map(a => (
           <button key={a.key} onClick={() => setAba(a.key)}
             className={`px-4 py-3 text-sm font-semibold border-b-2 transition ${aba === a.key ? 'border-yellow-400 text-yellow-400' : 'border-transparent text-gray-400 hover:text-gray-200'}`}>
@@ -460,6 +453,8 @@ export default function PDVPage() {
       {/* ── ABA CAIXA ── */}
       {aba === 'caixa' && (
         <div className="flex flex-1 overflow-hidden">
+
+          {/* Produtos */}
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="p-3 border-b border-gray-700 flex items-center gap-2 bg-gray-800">
               <Search size={15} className="text-gray-400 shrink-0"/>
@@ -471,20 +466,22 @@ export default function PDVPage() {
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
                 {prodFiltrados.map(p => (
                   <button key={p.id} onClick={() => addProduto(p)}
-                    className="bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-yellow-400 rounded-xl p-3 text-left transition">
+                    className="bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-yellow-400 rounded-xl p-3 text-left transition active:scale-95">
                     <p className="text-sm font-semibold text-white leading-tight">{p.nome}</p>
-                    <p className="text-base font-bold text-yellow-400 mt-1">{formatBRL(p.preco_venda)}</p>
+                    <p className="text-base font-bold text-yellow-400 mt-1">{formatBRL(p.preco_varejo)}</p>
                   </button>
                 ))}
                 {prodFiltrados.length === 0 && (
-                  <p className="col-span-full text-center text-gray-500 text-sm py-8">Nenhum produto encontrado.</p>
+                  <p className="col-span-full text-center text-gray-500 text-sm py-8">
+                    {produtos.length === 0 ? 'Nenhum produto cadastrado nesta unidade.' : 'Nenhum produto encontrado.'}
+                  </p>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Carrinho */}
-          <div className="w-72 bg-gray-800 border-l border-gray-700 flex flex-col">
+          {/* Carrinho + pagamento rápido */}
+          <div className="w-80 bg-gray-800 border-l border-gray-700 flex flex-col">
             <div className="p-3 border-b border-gray-700 flex items-center gap-2">
               <ShoppingCart size={16} className="text-yellow-400"/>
               <span className="font-bold text-sm">Carrinho</span>
@@ -492,14 +489,18 @@ export default function PDVPage() {
                 <span className="ml-auto bg-yellow-400 text-gray-900 text-xs font-bold px-2 py-0.5 rounded-full">{carrinho.length}</span>
               )}
             </div>
+
+            {/* Cliente */}
             <div className="px-3 pt-2">
               <input value={clienteNome} onChange={e => setClienteNome(e.target.value)}
                 placeholder="👤 Cliente (opcional)"
                 className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-xs outline-none"/>
             </div>
+
+            {/* Itens */}
             <div className="flex-1 overflow-y-auto p-2 space-y-1">
               {carrinho.length === 0
-                ? <p className="text-center text-gray-500 text-xs mt-8">Selecione produtos</p>
+                ? <p className="text-center text-gray-500 text-xs mt-8">Clique nos produtos para adicionar</p>
                 : carrinho.map(i => (
                   <div key={i.produto_id} className="bg-gray-700 rounded-lg p-2">
                     <div className="flex justify-between items-start">
@@ -510,31 +511,57 @@ export default function PDVPage() {
                     <div className="flex items-center justify-between mt-1">
                       <div className="flex items-center gap-1">
                         <button onClick={() => updateQtd(i.produto_id, -1)}
-                          className="w-5 h-5 rounded-full bg-gray-600 hover:bg-gray-500 flex items-center justify-center"><Minus size={9}/></button>
-                        <span className="text-xs font-bold w-5 text-center">{i.quantidade}</span>
+                          className="w-6 h-6 rounded-full bg-gray-600 hover:bg-gray-500 flex items-center justify-center"><Minus size={10}/></button>
+                        <span className="text-sm font-bold w-6 text-center">{i.quantidade}</span>
                         <button onClick={() => updateQtd(i.produto_id, 1)}
-                          className="w-5 h-5 rounded-full bg-yellow-400 hover:bg-yellow-300 text-gray-900 flex items-center justify-center"><Plus size={9}/></button>
+                          className="w-6 h-6 rounded-full bg-yellow-400 hover:bg-yellow-300 text-gray-900 flex items-center justify-center"><Plus size={10}/></button>
                       </div>
-                      <span className="text-xs font-bold text-yellow-400">{formatBRL(i.preco * i.quantidade)}</span>
+                      <span className="text-sm font-bold text-yellow-400">{formatBRL(i.preco * i.quantidade)}</span>
                     </div>
                   </div>
                 ))
               }
             </div>
-            <div className="p-3 border-t border-gray-700 space-y-2">
+
+            {/* Total e pagamento rápido */}
+            <div className="p-3 border-t border-gray-700 space-y-3">
+              {/* Desconto */}
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-400">Desconto R$</span>
                 <input type="number" step="0.01" value={desconto} onChange={e => setDesconto(e.target.value)}
-                  placeholder="0,00" className="flex-1 bg-gray-700 border border-gray-600 text-white rounded px-2 py-1 text-xs outline-none text-right"/>
+                  placeholder="0,00" className="flex-1 bg-gray-700 border border-gray-600 text-white rounded px-2 py-1.5 text-xs outline-none text-right"/>
               </div>
-              <div className="flex justify-between text-xs text-gray-400"><span>Subtotal</span><span>{formatBRL(subtotal)}</span></div>
-              {descontoVal > 0 && <div className="flex justify-between text-xs text-red-400"><span>Desconto</span><span>- {formatBRL(descontoVal)}</span></div>}
-              <div className="flex justify-between font-bold text-base border-t border-gray-600 pt-2">
-                <span>TOTAL</span><span className="text-yellow-400">{formatBRL(total)}</span>
+
+              {/* Total */}
+              <div className="bg-gray-700 rounded-xl px-4 py-3 flex justify-between items-center">
+                <span className="text-sm font-bold text-gray-300">TOTAL</span>
+                <span className="text-2xl font-bold text-yellow-400">{formatBRL(total)}</span>
               </div>
-              <Btn onClick={() => setModalPag(true)} disabled={!carrinho.length}
-                className="w-full bg-green-500 hover:bg-green-400 text-white py-3 text-base flex items-center justify-center gap-2">
-                <CreditCard size={18}/> Cobrar
+
+              {/* Botões de pagamento rápido */}
+              <div className="grid grid-cols-2 gap-2">
+                <Btn onClick={() => finalizarVenda('dinheiro', total)} disabled={!carrinho.length || salvando}
+                  className="bg-green-600 hover:bg-green-500 text-white flex items-center justify-center gap-1.5 py-3">
+                  <Banknote size={16}/> Dinheiro
+                </Btn>
+                <Btn onClick={() => finalizarVenda('pix')} disabled={!carrinho.length || salvando}
+                  className="bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center gap-1.5 py-3">
+                  <Smartphone size={16}/> PIX
+                </Btn>
+                <Btn onClick={() => finalizarVenda('debito')} disabled={!carrinho.length || salvando}
+                  className="bg-purple-600 hover:bg-purple-500 text-white flex items-center justify-center gap-1.5 py-3">
+                  <CreditCard size={16}/> Débito
+                </Btn>
+                <Btn onClick={() => finalizarVenda('credito')} disabled={!carrinho.length || salvando}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center gap-1.5 py-3">
+                  <CreditCard size={16}/> Crédito
+                </Btn>
+              </div>
+
+              {/* Misto + troco */}
+              <Btn onClick={() => setModalPagMisto(true)} disabled={!carrinho.length || salvando}
+                className="w-full bg-gray-600 hover:bg-gray-500 text-white flex items-center justify-center gap-2 py-2.5">
+                🔀 Misto / Calcular Troco
               </Btn>
             </div>
           </div>
@@ -558,28 +585,28 @@ export default function PDVPage() {
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
             <p className="text-sm font-semibold text-yellow-400 mb-3">📋 Produtos cadastrados na Matriz</p>
             {produtosPed.length === 0
-              ? <p className="text-xs text-gray-500">Nenhum produto cadastrado na Matriz ainda.</p>
+              ? <p className="text-xs text-gray-500 italic">Nenhum produto cadastrado na Matriz ainda.</p>
               : (
                 <div className="space-y-2">
                   {produtosPed.map(p => {
                     const noLista = itensPed.find(i => i.produto_id === p.id)
                     return (
-                      <div key={p.id} className="flex items-center justify-between bg-gray-700 rounded-lg px-3 py-2">
+                      <div key={p.id} className="flex items-center justify-between bg-gray-700 rounded-lg px-3 py-2.5">
                         <span className="text-sm text-white">{p.nome}</span>
                         <div className="flex items-center gap-2">
                           {noLista ? (
                             <>
                               <button onClick={() => setItensPed(prev => prev.map(i => i.produto_id === p.id ? { ...i, quantidade: Math.max(1, i.quantidade - 1) } : i))}
-                                className="w-6 h-6 rounded-full bg-gray-600 hover:bg-gray-500 flex items-center justify-center"><Minus size={10}/></button>
-                              <span className="text-sm font-bold text-yellow-400 w-6 text-center">{noLista.quantidade}</span>
+                                className="w-7 h-7 rounded-full bg-gray-600 hover:bg-gray-500 flex items-center justify-center"><Minus size={11}/></button>
+                              <span className="text-sm font-bold text-yellow-400 w-7 text-center">{noLista.quantidade}</span>
                               <button onClick={() => setItensPed(prev => prev.map(i => i.produto_id === p.id ? { ...i, quantidade: i.quantidade + 1 } : i))}
-                                className="w-6 h-6 rounded-full bg-yellow-400 hover:bg-yellow-300 text-gray-900 flex items-center justify-center"><Plus size={10}/></button>
+                                className="w-7 h-7 rounded-full bg-yellow-400 hover:bg-yellow-300 text-gray-900 flex items-center justify-center"><Plus size={11}/></button>
                               <button onClick={() => setItensPed(prev => prev.filter(i => i.produto_id !== p.id))}
                                 className="text-red-400 hover:text-red-300 ml-1"><X size={13}/></button>
                             </>
                           ) : (
-                            <button onClick={() => setItensPed(prev => [...prev, { produto_id: p.id, nome: p.nome, quantidade: 1, unidade: p.unidade || 'un', outros: false }])}
-                              className="flex items-center gap-1 bg-yellow-400 hover:bg-yellow-300 text-gray-900 px-3 py-1 rounded-lg text-xs font-semibold">
+                            <button onClick={() => addProdutoPed(p)}
+                              className="flex items-center gap-1 bg-yellow-400 hover:bg-yellow-300 text-gray-900 px-3 py-1.5 rounded-lg text-xs font-semibold">
                               <Plus size={12}/> Adicionar
                             </button>
                           )}
@@ -592,28 +619,25 @@ export default function PDVPage() {
             }
           </div>
 
-          {/* Campo Outros */}
+          {/* Outros */}
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
             <p className="text-sm font-semibold text-gray-300 mb-3">➕ Outros (produto não cadastrado)</p>
-            <div className="flex gap-2 items-end">
-              <div className="flex-1">
-                <input value={outroNome} onChange={e => setOutroNome(e.target.value)}
-                  placeholder="Descreva o produto..."
-                  className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm outline-none"/>
-              </div>
+            <div className="flex gap-2">
+              <input value={outroNome} onChange={e => setOutroNome(e.target.value)}
+                placeholder="Descreva o produto..."
+                className="flex-1 bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm outline-none"/>
               <input type="number" min={1} value={outroQtd} onChange={e => setOutroQtd(Number(e.target.value))}
                 className="w-14 bg-gray-700 border border-gray-600 text-white rounded-lg px-2 py-2 text-sm outline-none text-center"/>
               <input value={outroUnidade} onChange={e => setOutroUnidade(e.target.value)}
                 placeholder="un" className="w-14 bg-gray-700 border border-gray-600 text-white rounded-lg px-2 py-2 text-sm outline-none text-center"/>
-              <Btn onClick={addOutro} disabled={!outroNome.trim()}
-                className="bg-gray-600 hover:bg-gray-500 text-white px-3">Add</Btn>
+              <Btn onClick={addOutro} disabled={!outroNome.trim()} className="bg-gray-600 hover:bg-gray-500 text-white px-3">Add</Btn>
             </div>
           </div>
 
           {/* Resumo do pedido */}
           {itensPed.length > 0 && (
             <div className="bg-gray-800 border border-yellow-500/30 rounded-xl p-4">
-              <p className="text-sm font-semibold text-yellow-400 mb-3">🛒 Resumo do pedido ({itensPed.length} item(s))</p>
+              <p className="text-sm font-semibold text-yellow-400 mb-3">🛒 Resumo ({itensPed.length} item(s))</p>
               <div className="space-y-2">
                 {itensPed.map((i, idx) => (
                   <div key={idx} className="flex items-center justify-between bg-gray-700 rounded-lg px-3 py-2 text-sm">
@@ -633,7 +657,7 @@ export default function PDVPage() {
           )}
 
           <textarea value={obsPed} onChange={e => setObsPed(e.target.value)} rows={2}
-            placeholder="Observações gerais (urgência, prazo...)..."
+            placeholder="Observações (urgência, prazo...)..."
             className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-3 py-2 text-sm outline-none resize-none"/>
 
           <Btn onClick={enviarPedidoInterno} disabled={salvandoPed || !itensPed.length}
@@ -748,53 +772,37 @@ export default function PDVPage() {
         </div>
       )}
 
-      {/* Modal pagamento */}
-      {modalPag && (
+      {/* Modal Misto / Troco */}
+      {modalPagMisto && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-sm p-6 space-y-4">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-bold text-white">Pagamento</h3>
-              <button onClick={() => setModalPag(false)}><X size={20} className="text-gray-400"/></button>
+              <button onClick={() => setModalPagMisto(false)}><X size={20} className="text-gray-400"/></button>
             </div>
             <div className="bg-gray-700 rounded-xl p-4 text-center">
-              <p className="text-xs text-gray-400">Total a cobrar</p>
-              <p className="text-4xl font-bold text-yellow-400">{formatBRL(total)}</p>
+              <p className="text-xs text-gray-400">Total</p>
+              <p className="text-3xl font-bold text-yellow-400">{formatBRL(total)}</p>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              {([
-                {val:'dinheiro',label:'💵 Dinheiro'},
-                {val:'pix',     label:'📱 PIX'},
-                {val:'credito', label:'💳 Crédito'},
-                {val:'debito',  label:'💳 Débito'},
-                {val:'misto',   label:'🔀 Misto'},
-              ] as {val:typeof formaPag;label:string}[]).map(f => (
-                <button key={f.val} onClick={() => setFormaPag(f.val)}
-                  className={`py-2 px-1 rounded-lg text-xs font-semibold border transition ${formaPag === f.val ? 'bg-yellow-400 text-gray-900 border-yellow-400' : 'bg-gray-700 border-gray-600 text-gray-300 hover:border-yellow-400'}`}>
-                  {f.label}
-                </button>
-              ))}
-            </div>
-            {formaPag === 'dinheiro' && (
+            <div className="space-y-3">
               <div>
-                <label className="text-xs text-gray-400 mb-1 block">Valor recebido R$</label>
-                <Input type="number" step="0.01" value={valDinheiro} onChange={e => setValDinheiro(e.target.value)} autoFocus/>
+                <label className="text-xs text-gray-400 mb-1 block">💵 Dinheiro R$</label>
+                <Input type="number" step="0.01" value={valDinheiro} onChange={e => setValDinheiro(e.target.value)} placeholder="0,00"/>
                 {Number(valDinheiro) > 0 && (
-                  <div className="bg-green-800/50 border border-green-700 rounded-lg p-3 text-center mt-2">
-                    <p className="text-xs text-green-400">Troco</p>
-                    <p className="text-2xl font-bold text-green-300">{formatBRL(troco)}</p>
-                  </div>
+                  <p className="text-xs text-green-400 mt-1">Troco: {formatBRL(Math.max(Number(valDinheiro) - total, 0))}</p>
                 )}
               </div>
-            )}
-            {formaPag === 'misto' && (
-              <div className="space-y-2">
-                <div><label className="text-xs text-gray-400 mb-1 block">Dinheiro R$</label><Input type="number" step="0.01" value={valDinheiro} onChange={e => setValDinheiro(e.target.value)}/></div>
-                <div><label className="text-xs text-gray-400 mb-1 block">PIX R$</label><Input type="number" step="0.01" value={valPix} onChange={e => setValPix(e.target.value)}/></div>
-                <div><label className="text-xs text-gray-400 mb-1 block">Cartão R$</label><Input type="number" step="0.01" value={valCartao} onChange={e => setValCartao(e.target.value)}/></div>
+              <div>
+                <label className="text-xs text-gray-400 mb-1 block">📱 PIX R$</label>
+                <Input type="number" step="0.01" value={valPix} onChange={e => setValPix(e.target.value)} placeholder="0,00"/>
               </div>
-            )}
-            <Btn onClick={finalizarVenda} disabled={salvando}
-              className="w-full bg-green-500 hover:bg-green-400 text-white py-3 text-base">
+              <div>
+                <label className="text-xs text-gray-400 mb-1 block">💳 Cartão R$</label>
+                <Input type="number" step="0.01" value={valCartao} onChange={e => setValCartao(e.target.value)} placeholder="0,00"/>
+              </div>
+            </div>
+            <Btn onClick={() => finalizarVenda('misto')} disabled={salvando}
+              className="w-full bg-green-500 hover:bg-green-400 text-white py-3">
               {salvando ? 'Finalizando...' : '✅ Finalizar Venda'}
             </Btn>
           </div>
@@ -808,8 +816,10 @@ export default function PDVPage() {
             <CheckCircle size={52} className="text-green-400 mx-auto"/>
             <h3 className="text-xl font-bold text-white">Venda #{vendaConcluida.numero}</h3>
             <p className="text-4xl font-bold text-yellow-400">{formatBRL(vendaConcluida.total)}</p>
-            {vendaConcluida.troco > 0 && <p className="text-lg font-bold text-green-400">Troco: {formatBRL(vendaConcluida.troco)}</p>}
-            <Btn onClick={() => setVendaConcluida(null)} className="w-full bg-yellow-400 hover:bg-yellow-300 text-gray-900 py-3 text-base mt-2">Nova Venda</Btn>
+            {vendaConcluida.troco > 0 && <p className="text-2xl font-bold text-green-400">Troco: {formatBRL(vendaConcluida.troco)}</p>}
+            <Btn onClick={() => setVendaConcluida(null)} className="w-full bg-yellow-400 hover:bg-yellow-300 text-gray-900 py-3 text-base mt-2">
+              ➕ Nova Venda
+            </Btn>
           </div>
         </div>
       )}
