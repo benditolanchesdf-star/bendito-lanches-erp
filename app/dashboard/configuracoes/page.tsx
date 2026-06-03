@@ -1,11 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { FILIAL_ID } from '@/lib/constants'
-import Modal from '@/components/Modal'
 import { Field, Input, PrimaryButton, SecondaryButton, PageHeader, Loading } from '@/components/ui'
-import { Plus, Trash2, Building2, User as UserIcon, Tag, MessageCircle, CheckCircle, XCircle } from 'lucide-react'
+import { Plus, Trash2, Building2, User as UserIcon, Tag, MessageCircle, CheckCircle, XCircle, Users, Shield, ChevronRight } from 'lucide-react'
 import { enviarWhatsApp, carregarConfigZAPI } from '@/lib/zapi'
 
 export default function ConfiguracoesPage() {
@@ -17,17 +17,11 @@ export default function ConfiguracoesPage() {
   const [novaCat, setNovaCat] = useState('')
   const [filialForm, setFilialForm] = useState<any>({})
   const [savingFilial, setSavingFilial] = useState(false)
+  const [totalUsuarios, setTotalUsuarios] = useState(0)
 
-  // WhatsApp / Z-API
   const [zapConfig, setZapConfig] = useState({
-    zapi_instance_id: '',
-    zapi_token: '',
-    zapi_client_token: '',
-    zapi_ativo: 'false',
-    wpp_msg_confirmado: '',
-    wpp_msg_producao: '',
-    wpp_msg_saiu: '',
-    wpp_msg_entregue: '',
+    zapi_instance_id: '', zapi_token: '', zapi_client_token: '', zapi_ativo: 'false',
+    wpp_msg_confirmado: '', wpp_msg_producao: '', wpp_msg_saiu: '', wpp_msg_entregue: '',
   })
   const [savingZap, setSavingZap] = useState(false)
   const [testeFone, setTesteFone] = useState('')
@@ -39,18 +33,18 @@ export default function ConfiguracoesPage() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     setUser(user)
-    const [f, c, cfgs, logs] = await Promise.all([
+    const [f, c, cfgs, logs, totalU] = await Promise.all([
       supabase.from('filiais').select('*').eq('id', FILIAL_ID).maybeSingle(),
       supabase.from('categorias').select('*').order('ordem').order('nome'),
       supabase.from('configuracoes').select('chave, valor').eq('filial_id', FILIAL_ID),
       supabase.from('whatsapp_logs').select('*').eq('filial_id', FILIAL_ID).order('created_at', { ascending: false }).limit(10),
+      supabase.from('profiles').select('id', { count: 'exact', head: true }),
     ])
     setFilial(f.data)
     setFilialForm(f.data || {})
     setCategorias(c.data || [])
     setLogsWpp(logs.data || [])
-
-    // Monta objeto de configs Z-API
+    setTotalUsuarios(totalU.count || 0)
     const map: Record<string, string> = {}
     for (const r of cfgs.data || []) map[r.chave] = r.valor || ''
     setZapConfig((prev) => ({ ...prev, ...map }))
@@ -60,8 +54,7 @@ export default function ConfiguracoesPage() {
 
   async function salvarZAPI() {
     setSavingZap(true)
-    const entries = Object.entries(zapConfig)
-    for (const [chave, valor] of entries) {
+    for (const [chave, valor] of Object.entries(zapConfig)) {
       await supabase.from('configuracoes').upsert(
         { filial_id: FILIAL_ID, chave, valor, updated_at: new Date().toISOString() },
         { onConflict: 'filial_id,chave' }
@@ -74,13 +67,10 @@ export default function ConfiguracoesPage() {
 
   async function testarWhatsApp() {
     if (!testeFone.trim()) { alert('Informe um número para teste.'); return }
-    setTestando(true)
-    setTesteResult(null)
+    setTestando(true); setTesteResult(null)
     const { config } = await carregarConfigZAPI()
-    // Força ativo para o teste mesmo que esteja false
     const result = await enviarWhatsApp(
-      { ...config, ativo: true },
-      testeFone,
+      { ...config, ativo: true }, testeFone,
       `🧪 Teste de conexão Z-API — Bendito Lanches ERP. Se você recebeu esta mensagem, a integração está funcionando! ✅`
     )
     setTesteResult({ ok: result.ok, msg: result.ok ? 'Mensagem enviada com sucesso!' : (result.erro || 'Erro desconhecido') })
@@ -90,9 +80,7 @@ export default function ConfiguracoesPage() {
   async function salvarFilial() {
     setSavingFilial(true)
     const { error } = await supabase.from('filiais').update({
-      nome: filialForm.nome,
-      cnpj: filialForm.cnpj || null,
-      endereco: filialForm.endereco || null,
+      nome: filialForm.nome, cnpj: filialForm.cnpj || null, endereco: filialForm.endereco || null,
     }).eq('id', FILIAL_ID)
     setSavingFilial(false)
     if (error) { alert('Erro: ' + error.message); return }
@@ -103,18 +91,16 @@ export default function ConfiguracoesPage() {
   async function addCategoria() {
     if (!novaCat.trim()) return
     const { error } = await supabase.from('categorias').insert({
-      filial_id: FILIAL_ID,
-      nome: novaCat.trim(),
-      ordem: categorias.length + 1,
+      filial_id: FILIAL_ID, nome: novaCat.trim(), ordem: categorias.length + 1,
     })
     if (error) { alert('Erro: ' + error.message); return }
     setNovaCat(''); load()
   }
 
   async function excluirCategoria(c: any) {
-    if (!confirm(`Excluir categoria "${c.nome}"? (Produtos vinculados ficarão sem categoria)`)) return
+    if (!confirm(`Excluir categoria "${c.nome}"?`)) return
     const { error } = await supabase.from('categorias').delete().eq('id', c.id)
-    if (error) { alert('Erro: ' + error.message + ' — verifique se há produtos usando esta categoria.'); return }
+    if (error) { alert('Erro: ' + error.message); return }
     load()
   }
 
@@ -122,8 +108,54 @@ export default function ConfiguracoesPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Configurações" subtitle="Filial, usuário e categorias" />
+      <PageHeader title="Configurações" subtitle="Filial, usuários e integrações" />
 
+      {/* ===== ACESSO RÁPIDO ===== */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <Link href="/dashboard/configuracoes/usuarios"
+          className="bg-white rounded-xl shadow-md p-5 flex items-center justify-between hover:shadow-lg hover:ring-2 hover:ring-bendito-dourado transition group">
+          <div className="flex items-center gap-3">
+            <div className="bg-purple-100 p-3 rounded-xl">
+              <Shield size={22} className="text-purple-600" />
+            </div>
+            <div>
+              <p className="font-bold text-bendito-verde-escuro">Gestão de Usuários</p>
+              <p className="text-xs text-gray-500">{totalUsuarios} usuário(s) cadastrado(s)</p>
+            </div>
+          </div>
+          <ChevronRight size={18} className="text-gray-400 group-hover:text-bendito-verde transition" />
+        </Link>
+
+        <Link href="/dashboard/configuracoes/atendentes"
+          className="bg-white rounded-xl shadow-md p-5 flex items-center justify-between hover:shadow-lg hover:ring-2 hover:ring-bendito-dourado transition group">
+          <div className="flex items-center gap-3">
+            <div className="bg-orange-100 p-3 rounded-xl">
+              <Users size={22} className="text-orange-600" />
+            </div>
+            <div>
+              <p className="font-bold text-bendito-verde-escuro">Atendentes PDV</p>
+              <p className="text-xs text-gray-500">Senhas do frente de caixa</p>
+            </div>
+          </div>
+          <ChevronRight size={18} className="text-gray-400 group-hover:text-bendito-verde transition" />
+        </Link>
+
+        <Link href="/dashboard/configuracoes/filiais"
+          className="bg-white rounded-xl shadow-md p-5 flex items-center justify-between hover:shadow-lg hover:ring-2 hover:ring-bendito-dourado transition group">
+          <div className="flex items-center gap-3">
+            <div className="bg-blue-100 p-3 rounded-xl">
+              <Building2 size={22} className="text-blue-600" />
+            </div>
+            <div>
+              <p className="font-bold text-bendito-verde-escuro">Filiais</p>
+              <p className="text-xs text-gray-500">Gerenciar unidades da rede</p>
+            </div>
+          </div>
+          <ChevronRight size={18} className="text-gray-400 group-hover:text-bendito-verde transition" />
+        </Link>
+      </div>
+
+      {/* ===== USUÁRIO LOGADO ===== */}
       <div className="bg-white rounded-xl shadow-md p-6">
         <div className="flex items-center gap-2 mb-4">
           <UserIcon className="text-bendito-dourado-escuro" size={22} />
@@ -133,13 +165,14 @@ export default function ConfiguracoesPage() {
           <p className="text-sm"><span className="text-gray-600">E-mail:</span> <span className="font-medium">{user?.email}</span></p>
           <p className="text-sm mt-1"><span className="text-gray-600">ID:</span> <span className="font-mono text-xs">{user?.id}</span></p>
         </div>
-        <p className="text-xs text-gray-500 mt-3">Para alterar a senha, use o painel do Supabase (Authentication → Users) ou implemente o fluxo de "esqueci minha senha" via Supabase Auth.</p>
+        <p className="text-xs text-gray-500 mt-3">Para alterar a senha, use o painel do Supabase ou o fluxo de "esqueci minha senha".</p>
       </div>
 
+      {/* ===== DADOS DA FILIAL ===== */}
       <div className="bg-white rounded-xl shadow-md p-6">
         <div className="flex items-center gap-2 mb-4">
           <Building2 className="text-bendito-dourado-escuro" size={22} />
-          <h2 className="text-lg font-bold text-bendito-verde-escuro">Dados da Filial</h2>
+          <h2 className="text-lg font-bold text-bendito-verde-escuro">Dados da Matriz</h2>
         </div>
         <div className="space-y-4">
           <Field label="Nome" required><Input value={filialForm.nome || ''} onChange={(e) => setFilialForm({ ...filialForm, nome: e.target.value })} /></Field>
@@ -151,14 +184,18 @@ export default function ConfiguracoesPage() {
         </div>
       </div>
 
+      {/* ===== CATEGORIAS ===== */}
       <div className="bg-white rounded-xl shadow-md p-6">
         <div className="flex items-center gap-2 mb-4">
           <Tag className="text-bendito-dourado-escuro" size={22} />
           <h2 className="text-lg font-bold text-bendito-verde-escuro">Categorias de Produtos</h2>
         </div>
         <div className="flex gap-2 mb-4">
-          <Input value={novaCat} onChange={(e) => setNovaCat(e.target.value)} placeholder="Nome da nova categoria..." onKeyDown={(e) => e.key === 'Enter' && addCategoria()} />
-          <PrimaryButton onClick={addCategoria} disabled={!novaCat.trim()} className="flex items-center gap-1"><Plus size={18} /> Adicionar</PrimaryButton>
+          <Input value={novaCat} onChange={(e) => setNovaCat(e.target.value)} placeholder="Nome da nova categoria..."
+            onKeyDown={(e) => e.key === 'Enter' && addCategoria()} />
+          <PrimaryButton onClick={addCategoria} disabled={!novaCat.trim()} className="flex items-center gap-1">
+            <Plus size={18} /> Adicionar
+          </PrimaryButton>
         </div>
         {categorias.length === 0 ? <p className="text-sm text-gray-500">Nenhuma categoria cadastrada.</p> : (
           <div className="space-y-2">
@@ -181,36 +218,25 @@ export default function ConfiguracoesPage() {
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
             <span className="text-sm text-gray-600">Ativo</span>
-            <div
-              onClick={() => setZapConfig((z) => ({ ...z, zapi_ativo: z.zapi_ativo === 'true' ? 'false' : 'true' }))}
-              className={`w-11 h-6 rounded-full transition-colors ${zapConfig.zapi_ativo === 'true' ? 'bg-green-500' : 'bg-gray-300'} relative cursor-pointer`}
-            >
+            <div onClick={() => setZapConfig((z) => ({ ...z, zapi_ativo: z.zapi_ativo === 'true' ? 'false' : 'true' }))}
+              className={`w-11 h-6 rounded-full transition-colors ${zapConfig.zapi_ativo === 'true' ? 'bg-green-500' : 'bg-gray-300'} relative cursor-pointer`}>
               <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${zapConfig.zapi_ativo === 'true' ? 'translate-x-5' : 'translate-x-0.5'}`} />
             </div>
           </label>
         </div>
-
         <p className="text-xs text-gray-500">
-          Configure as credenciais da sua instância Z-API para enviar notificações automáticas por WhatsApp quando o status do pedido mudar.
+          Configure as credenciais da sua instância Z-API para enviar notificações automáticas por WhatsApp.
           Obtenha seus dados em <a href="https://app.z-api.io" target="_blank" className="text-blue-600 underline">app.z-api.io</a>.
         </p>
-
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Field label="Instance ID">
-            <Input value={zapConfig.zapi_instance_id} onChange={(e) => setZapConfig((z) => ({ ...z, zapi_instance_id: e.target.value }))} placeholder="Ex: 3F270655F5F201F43..." />
-          </Field>
-          <Field label="Token">
-            <Input value={zapConfig.zapi_token} onChange={(e) => setZapConfig((z) => ({ ...z, zapi_token: e.target.value }))} placeholder="Token da instância" type="password" />
-          </Field>
-          <Field label="Client Token">
-            <Input value={zapConfig.zapi_client_token} onChange={(e) => setZapConfig((z) => ({ ...z, zapi_client_token: e.target.value }))} placeholder="Client Token (segurança)" type="password" />
-          </Field>
+          <Field label="Instance ID"><Input value={zapConfig.zapi_instance_id} onChange={(e) => setZapConfig((z) => ({ ...z, zapi_instance_id: e.target.value }))} placeholder="Ex: 3F270655F5F201F43..." /></Field>
+          <Field label="Token"><Input value={zapConfig.zapi_token} onChange={(e) => setZapConfig((z) => ({ ...z, zapi_token: e.target.value }))} placeholder="Token da instância" type="password" /></Field>
+          <Field label="Client Token"><Input value={zapConfig.zapi_client_token} onChange={(e) => setZapConfig((z) => ({ ...z, zapi_client_token: e.target.value }))} placeholder="Client Token" type="password" /></Field>
         </div>
-
         <div className="border-t pt-4">
           <p className="text-sm font-semibold text-gray-700 mb-3">Mensagens automáticas</p>
           <p className="text-xs text-gray-500 mb-3">
-            Variáveis disponíveis: <code className="bg-gray-100 px-1 rounded">{`{{nome_loja}}`}</code> <code className="bg-gray-100 px-1 rounded">{`{{numero_pedido}}`}</code> <code className="bg-gray-100 px-1 rounded">{`{{data_entrega}}`}</code> <code className="bg-gray-100 px-1 rounded">{`{{horario}}`}</code>
+            Variáveis: <code className="bg-gray-100 px-1 rounded">{`{{nome_loja}}`}</code> <code className="bg-gray-100 px-1 rounded">{`{{numero_pedido}}`}</code> <code className="bg-gray-100 px-1 rounded">{`{{data_entrega}}`}</code> <code className="bg-gray-100 px-1 rounded">{`{{horario}}`}</code>
           </p>
           <div className="space-y-3">
             {[
@@ -220,18 +246,13 @@ export default function ConfiguracoesPage() {
               { key: 'wpp_msg_entregue',   label: '📦 Entregue' },
             ].map(({ key, label }) => (
               <Field key={key} label={label}>
-                <textarea
-                  rows={2}
-                  value={(zapConfig as any)[key]}
+                <textarea rows={2} value={(zapConfig as any)[key]}
                   onChange={(e) => setZapConfig((z) => ({ ...z, [key]: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-bendito-dourado resize-none"
-                />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-bendito-dourado resize-none" />
               </Field>
             ))}
           </div>
         </div>
-
-        {/* Teste de envio */}
         <div className="border-t pt-4">
           <p className="text-sm font-semibold text-gray-700 mb-3">Testar conexão</p>
           <div className="flex gap-3 items-end">
@@ -239,8 +260,7 @@ export default function ConfiguracoesPage() {
               <Input value={testeFone} onChange={(e) => setTesteFone(e.target.value)} placeholder="(61) 9xxxx-xxxx" />
             </Field>
             <SecondaryButton onClick={testarWhatsApp} disabled={testando} className="flex items-center gap-2 whitespace-nowrap">
-              <MessageCircle size={16} />
-              {testando ? 'Enviando...' : 'Enviar teste'}
+              <MessageCircle size={16} />{testando ? 'Enviando...' : 'Enviar teste'}
             </SecondaryButton>
           </div>
           {testeResult && (
@@ -250,14 +270,12 @@ export default function ConfiguracoesPage() {
             </div>
           )}
         </div>
-
         <PrimaryButton onClick={salvarZAPI} disabled={savingZap} className="flex items-center gap-2">
-          <MessageCircle size={16} />
-          {savingZap ? 'Salvando...' : 'Salvar configurações WhatsApp'}
+          <MessageCircle size={16} />{savingZap ? 'Salvando...' : 'Salvar configurações WhatsApp'}
         </PrimaryButton>
       </div>
 
-      {/* Log de mensagens enviadas */}
+      {/* Log WhatsApp */}
       {logsWpp.length > 0 && (
         <div className="bg-white rounded-xl shadow-md p-6">
           <h2 className="text-lg font-bold text-bendito-verde-escuro mb-4 flex items-center gap-2">
