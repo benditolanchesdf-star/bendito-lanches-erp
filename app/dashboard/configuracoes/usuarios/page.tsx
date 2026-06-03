@@ -26,12 +26,12 @@ export default function UsuariosPage() {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
   const [usuarios, setUsuarios] = useState<any[]>([])
+  const [papeis, setPapeis] = useState<any[]>([])
+  const [permissoes, setPermissoes] = useState<any[]>([])
   const [filiais, setFiliais] = useState<any[]>([])
   const [modalOpen, setModalOpen] = useState(false)
   const [modalPermOpen, setModalPermOpen] = useState(false)
   const [usuarioSel, setUsuarioSel] = useState<any>(null)
-  const [papeisSel, setPapeisSel] = useState<any[]>([])
-  const [permissoesSel, setPermissoesSel] = useState<any[]>([])
   const [salvando, setSalvando] = useState(false)
   const [showSenha, setShowSenha] = useState(false)
   const [erro, setErro] = useState('')
@@ -39,19 +39,27 @@ export default function UsuariosPage() {
 
   async function load() {
     setLoading(true)
-    const [{ data: us }, { data: fils }] = await Promise.all([
-      supabase.from('profiles').select(`
-        id, nome, papel, ativo, filial_id,
-        usuario_papeis(id, papel, filial_id, ativo, filiais(nome)),
-        usuario_permissoes(id, permissao, filial_id, ativo)
-      `).order('nome'),
+    const [{ data: us }, { data: paps }, { data: perms }, { data: fils }] = await Promise.all([
+      supabase.from('profiles').select('id, nome, papel, ativo, filial_id').order('nome'),
+      supabase.from('usuario_papeis').select('id, user_id, papel, filial_id, ativo, filiais(nome)'),
+      supabase.from('usuario_permissoes').select('id, user_id, permissao, filial_id, ativo'),
       supabase.from('filiais').select('id, nome').eq('ativo', true),
     ])
     setUsuarios(us || [])
+    setPapeis(paps || [])
+    setPermissoes(perms || [])
     setFiliais(fils || [])
     setLoading(false)
   }
   useEffect(() => { load() }, [])
+
+  function papeisDoUsuario(userId: string) {
+    return papeis.filter(p => p.user_id === userId && p.ativo)
+  }
+
+  function permissoesDoUsuario(userId: string) {
+    return permissoes.filter(p => p.user_id === userId && p.ativo)
+  }
 
   async function criarUsuario() {
     if (!form.email || !form.senha || !form.nome) { setErro('Preencha nome, email e senha.'); return }
@@ -67,54 +75,40 @@ export default function UsuariosPage() {
     })
     const json = await res.json()
     if (!res.ok) { setErro(json.error || 'Erro ao criar usuário'); setSalvando(false); return }
-    setSalvando(false); setModalOpen(false); load()
-  }
-
-  async function resetarSenha(u: any) {
-    if (!confirm(`Enviar e-mail de redefinição de senha para ${u.nome}?`)) return
-    const { data: authUsers } = await supabase.auth.admin?.listUsers() || { data: null }
-    const authUser = authUsers?.users?.find((x: any) => x.id === u.id)
-    if (authUser?.email) {
-      const { error } = await supabase.auth.resetPasswordForEmail(authUser.email)
-      if (error) alert('Erro: ' + error.message)
-      else alert('E-mail de redefinição enviado!')
-    } else {
-      alert('Não foi possível encontrar o e-mail deste usuário.')
+    setSalvando(false)
+    if (json.senha_temporaria) {
+      alert(`Usuário criado!\nSenha temporária: ${json.senha_temporaria}\nO usuário deverá alterá-la no primeiro acesso.`)
     }
+    setModalOpen(false); load()
   }
 
   async function abrirPermissoes(u: any) {
     setUsuarioSel(u)
-    setPapeisSel(u.usuario_papeis || [])
-    setPermissoesSel(u.usuario_permissoes || [])
     setModalPermOpen(true)
   }
 
   async function togglePapel(papel: string, filial_id: string | null) {
-    const existe = papeisSel.find(p => p.papel === papel && p.filial_id === filial_id)
+    const existe = papeis.find(p => p.user_id === usuarioSel.id && p.papel === papel && p.filial_id === filial_id)
     if (existe) {
       await supabase.from('usuario_papeis').update({ ativo: !existe.ativo }).eq('id', existe.id)
     } else {
       await supabase.from('usuario_papeis').insert({ user_id: usuarioSel.id, papel, filial_id })
     }
-    const { data } = await supabase.from('usuario_papeis')
-      .select('id, papel, filial_id, ativo, filiais(nome)').eq('user_id', usuarioSel.id)
-    setPapeisSel(data || [])
     load()
   }
 
   async function togglePermissao(permissao: string) {
-    const existe = permissoesSel.find(p => p.permissao === permissao && !p.filial_id)
+    const existe = permissoes.find(p => p.user_id === usuarioSel.id && p.permissao === permissao && !p.filial_id)
     if (existe) {
       await supabase.from('usuario_permissoes').update({ ativo: !existe.ativo }).eq('id', existe.id)
     } else {
       await supabase.from('usuario_permissoes').insert({ user_id: usuarioSel.id, permissao, filial_id: null })
     }
-    const { data } = await supabase.from('usuario_permissoes')
-      .select('id, permissao, filial_id, ativo').eq('user_id', usuarioSel.id)
-    setPermissoesSel(data || [])
     load()
   }
+
+  const papeisSelUsuario = usuarioSel ? papeisDoUsuario(usuarioSel.id) : []
+  const permissoesSelUsuario = usuarioSel ? permissoesDoUsuario(usuarioSel.id) : []
 
   if (loading) return <Loading />
 
@@ -148,7 +142,7 @@ export default function UsuariosPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
-                      {(u.usuario_papeis||[]).filter((p:any)=>p.ativo).map((p:any) => (
+                      {papeisDoUsuario(u.id).map((p:any) => (
                         <span key={p.id} className={`px-2 py-0.5 rounded-full text-xs font-semibold ${PAPEL_COR[p.papel]||'bg-gray-100 text-gray-600'}`}>
                           {PAPEL_LABEL[p.papel]} {p.filiais?.nome ? `(${p.filiais.nome})` : '(Global)'}
                         </span>
@@ -157,7 +151,7 @@ export default function UsuariosPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
-                      {(u.usuario_permissoes||[]).filter((p:any)=>p.ativo).map((p:any) => (
+                      {permissoesDoUsuario(u.id).map((p:any) => (
                         <span key={p.id} className="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">
                           {PERM_LABEL[p.permissao]}
                         </span>
@@ -165,12 +159,8 @@ export default function UsuariosPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex gap-2">
-                      <button onClick={() => abrirPermissoes(u)} title="Gerenciar papéis"
-                        className="p-1.5 text-gray-400 hover:text-purple-600 rounded"><Shield size={15}/></button>
-                      <button onClick={() => resetarSenha(u)} title="Resetar senha"
-                        className="p-1.5 text-gray-400 hover:text-blue-600 rounded"><RefreshCw size={15}/></button>
-                    </div>
+                    <button onClick={() => abrirPermissoes(u)} title="Gerenciar papéis"
+                      className="p-1.5 text-gray-400 hover:text-purple-600 rounded"><Shield size={15}/></button>
                   </td>
                 </tr>
               ))}
@@ -235,7 +225,7 @@ export default function UsuariosPage() {
                     <p className="text-xs font-semibold text-gray-500 mb-2">🏢 {f.nome}</p>
                     <div className="flex flex-wrap gap-2">
                       {PAPEIS.filter(p=>p!=='admin').map(papel => {
-                        const ativo = papeisSel.find(p=>p.papel===papel && p.filial_id===f.id && p.ativo)
+                        const ativo = papeisSelUsuario.find(p=>p.papel===papel && p.filial_id===f.id)
                         return (
                           <button key={papel} onClick={()=>togglePapel(papel, f.id)}
                             className={`px-3 py-1 rounded-full text-xs font-semibold border transition ${ativo ? 'bg-bendito-verde text-white border-bendito-verde' : 'bg-white border-gray-300 text-gray-500 hover:border-bendito-verde'}`}>
@@ -249,7 +239,7 @@ export default function UsuariosPage() {
                 <div className="border border-red-200 rounded-lg p-3 bg-red-50">
                   <p className="text-xs font-semibold text-red-500 mb-2">🌐 Acesso Global</p>
                   <button onClick={()=>togglePapel('admin', null)}
-                    className={`px-3 py-1 rounded-full text-xs font-semibold border transition ${papeisSel.find(p=>p.papel==='admin'&&!p.filial_id&&p.ativo) ? 'bg-red-500 text-white border-red-500' : 'bg-white border-red-300 text-red-500'}`}>
+                    className={`px-3 py-1 rounded-full text-xs font-semibold border transition ${papeisSelUsuario.find(p=>p.papel==='admin'&&!p.filial_id) ? 'bg-red-500 text-white border-red-500' : 'bg-white border-red-300 text-red-500'}`}>
                     Administrador Global
                   </button>
                 </div>
@@ -259,7 +249,7 @@ export default function UsuariosPage() {
               <p className="text-sm font-bold text-bendito-verde-escuro mb-3">⚡ Permissões Extras</p>
               <div className="grid grid-cols-2 gap-2">
                 {PERMISSOES.map(perm => {
-                  const ativo = permissoesSel.find(p=>p.permissao===perm&&!p.filial_id&&p.ativo)
+                  const ativo = permissoesSelUsuario.find(p=>p.permissao===perm&&!p.filial_id)
                   return (
                     <button key={perm} onClick={()=>togglePermissao(perm)}
                       className={`px-3 py-2 rounded-lg text-xs font-semibold border transition text-left ${ativo ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-white border-gray-300 text-gray-600 hover:border-indigo-400'}`}>
