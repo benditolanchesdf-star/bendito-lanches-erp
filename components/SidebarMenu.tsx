@@ -8,6 +8,7 @@ import {
   LayoutDashboard, Users, ShoppingCart, DollarSign, CalendarDays, TrendingUp,
   Clock, Repeat, Star, Store, Package, BarChart2, Settings, Utensils,
   Truck, Calculator, Brain, Wallet, Monitor, ArrowLeftRight, LucideIcon,
+  ShoppingBag, TrendingDown, Bell,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -35,18 +36,21 @@ const MENUS: Record<string, MenuItem[]> = {
   ],
   admin: [
     { icon: LayoutDashboard, label: 'Dashboard',        href: '/dashboard' },
+    { icon: Bell,            label: 'Aprovações',       href: '/dashboard/aprovacoes' },
     { icon: ShoppingCart,    label: 'Pedidos',          href: '/dashboard/pedidos' },
+    { icon: ArrowLeftRight,  label: 'Pedidos Internos', href: '/dashboard/pedidos-internos' },
+    { icon: ShoppingBag,     label: 'Pedidos de Compra',href: '/dashboard/pedidos-compra' },
     { icon: Users,           label: 'Clientes',         href: '/dashboard/clientes' },
     { icon: Package,         label: 'Produtos',         href: '/dashboard/produtos' },
     { icon: Utensils,        label: 'Produção',         href: '/dashboard/producao' },
     { icon: Truck,           label: 'Agenda',           href: '/dashboard/agenda' },
     { icon: BarChart2,       label: 'Estoque',          href: '/dashboard/estoque' },
     { icon: Calculator,      label: 'Precificação',     href: '/dashboard/precificacao' },
+    { icon: TrendingDown,    label: 'Despesas',         href: '/dashboard/despesas' },
     { icon: Wallet,          label: 'Financeiro',       href: '/dashboard/financeiro' },
     { icon: TrendingUp,      label: 'Relatórios',       href: '/dashboard/relatorios' },
     { icon: Users,           label: 'Vendedores',       href: '/dashboard/vendedores' },
     { icon: Monitor,         label: 'PDV / Caixa',      href: '/dashboard/pdv' },
-    { icon: ArrowLeftRight,  label: 'Pedidos Internos', href: '/dashboard/pedidos-internos' },
     { icon: Brain,           label: 'IA',               href: '/dashboard/ia' },
     { icon: Settings,        label: 'Configurações',    href: '/dashboard/configuracoes' },
   ],
