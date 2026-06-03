@@ -149,6 +149,7 @@ export default function PDVPage() {
     .eq('filial_id', '11111111-1111-1111-1111-111111111111').order('nome')
   setProdutosPed(prodMatriz || [])
 }
+  
   async function carregarEstoque() {
     const [{ data: ef }, { data: al }] = await Promise.all([
       supabase.from('estoque_filial').select('*, produtos(nome, unidade)')
