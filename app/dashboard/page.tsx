@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { formatBRL, STATUS_PEDIDO, ROTAS_ENTREGA } from '@/lib/constants'
 import { Loading, StatusBadge } from '@/components/ui'
+import AlertasEstoque from '@/components/AlertasEstoque'
 import {
   ShoppingCart, DollarSign, Users, TrendingUp, AlertTriangle,
   Clock, MapPin, Factory, RefreshCw, ChevronRight,
@@ -26,7 +27,6 @@ export default function DashboardPage() {
   const [porRota, setPorRota] = useState<{ rota: string; count: number; valor: number }[]>([])
   const [producaoAmanha, setProducaoAmanha] = useState<{ nome: string; total: number; unidade: string }[]>([])
   const [clientesSemComprar, setClientesSemComprar] = useState<any[]>([])
-  const [estoqueBaixo, setEstoqueBaixo] = useState<any[]>([])
 
   async function load() {
     setLoading(true)
@@ -34,7 +34,7 @@ export default function DashboardPage() {
     const am = amanha()
     const inicioMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
 
-    const [pedHoje, pedAmanha, clientes, insumos, alertas] = await Promise.all([
+    const [pedHoje, pedAmanha, clientes, alertas] = await Promise.all([
       supabase.from('pedidos')
         .select('id, numero_pedido, status, valor_total, horario_entrega, rota_entrega, clientes(nome, nome_loja)')
         .eq('data_entrega', hj).neq('status', 'cancelado').order('horario_entrega'),
@@ -44,16 +44,14 @@ export default function DashboardPage() {
           clientes(nome, nome_loja)`)
         .eq('data_entrega', am).neq('status', 'cancelado').order('horario_entrega'),
       supabase.from('clientes').select('id', { count: 'exact', head: true }),
-      supabase.from('insumos').select('nome, quantidade_estoque, estoque_minimo, unidade_medida').eq('ativo', true),
-      supabase.from('vw_clientes_alertas').select('*').in('alerta', ['risco_perda', 'queda']).order('dias_sem_comprar', { ascending: false }).limit(5),
+      supabase.from('vw_clientes_alertas').select('*').in('alerta', ['risco_perda', 'queda'])
+        .order('dias_sem_comprar', { ascending: false }).limit(5),
     ])
 
-    // KPIs
     const todosHoje = pedHoje.data || []
     const emProducaoCount = todosHoje.filter((p) => ['producao', 'separado', 'pronto'].includes(p.status)).length
     const atrasadosCount = todosHoje.filter((p) => ['pendente', 'em_analise', 'confirmado'].includes(p.status)).length
 
-    // Faturamento mês (query separada)
     const { data: pedMes } = await supabase
       .from('pedidos').select('valor_total').gte('created_at', inicioMes).neq('status', 'cancelado')
 
@@ -68,11 +66,9 @@ export default function DashboardPage() {
 
     setPedidosHoje(todosHoje)
 
-    // Pedidos de amanhã
     const am_data = pedAmanha.data || []
     setPedidosAmanha(am_data)
 
-    // Por horário (hoje)
     const horMap: Record<string, { count: number; valor: number }> = {}
     for (const p of todosHoje) {
       const h = p.horario_entrega ? p.horario_entrega.slice(0, 5) : 'S/H'
@@ -82,7 +78,6 @@ export default function DashboardPage() {
     }
     setPorHorario(Object.entries(horMap).sort().map(([hora, v]) => ({ hora, ...v })))
 
-    // Por rota (hoje)
     const rotMap: Record<string, { count: number; valor: number }> = {}
     for (const p of todosHoje) {
       const r = p.rota_entrega || 'sem_rota'
@@ -92,7 +87,6 @@ export default function DashboardPage() {
     }
     setPorRota(Object.entries(rotMap).map(([rota, v]) => ({ rota, ...v })).sort((a, b) => b.count - a.count))
 
-    // Produção necessária para amanhã (soma por produto)
     const prodMap: Record<string, { total: number; unidade: string }> = {}
     for (const p of am_data) {
       for (const item of (p.pedido_itens || []) as any[]) {
@@ -104,12 +98,7 @@ export default function DashboardPage() {
     }
     setProducaoAmanha(Object.entries(prodMap).map(([nome, v]) => ({ nome, ...v })).sort((a, b) => b.total - a.total))
 
-    // Alertas de clientes
     setClientesSemComprar(alertas.data || [])
-
-    // Estoque baixo
-    setEstoqueBaixo((insumos.data || []).filter((i: any) => Number(i.quantidade_estoque) <= Number(i.estoque_minimo)).slice(0, 5))
-
     setLoading(false)
   }
 
@@ -135,12 +124,12 @@ export default function DashboardPage() {
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {[
-          { title: 'Pedidos hoje',      value: kpis.pedidosHoje,                 icon: ShoppingCart, color: 'bg-blue-500' },
-          { title: 'Faturamento hoje',  value: formatBRL(kpis.faturamentoHoje),  icon: DollarSign,   color: 'bg-green-500' },
-          { title: 'Faturamento mês',   value: formatBRL(kpis.faturamentoMes),   icon: TrendingUp,   color: 'bg-bendito-dourado' },
-          { title: 'Clientes',          value: kpis.clientes,                    icon: Users,        color: 'bg-purple-500' },
-          { title: 'Em produção',       value: kpis.emProducao,                  icon: Factory,      color: 'bg-orange-500' },
-          { title: 'Pendentes hoje',    value: kpis.atrasados,                   icon: AlertTriangle,color: kpis.atrasados > 0 ? 'bg-red-500' : 'bg-gray-400' },
+          { title: 'Pedidos hoje',      value: kpis.pedidosHoje,                icon: ShoppingCart, color: 'bg-blue-500' },
+          { title: 'Faturamento hoje',  value: formatBRL(kpis.faturamentoHoje), icon: DollarSign,   color: 'bg-green-500' },
+          { title: 'Faturamento mês',   value: formatBRL(kpis.faturamentoMes),  icon: TrendingUp,   color: 'bg-bendito-dourado' },
+          { title: 'Clientes',          value: kpis.clientes,                   icon: Users,        color: 'bg-purple-500' },
+          { title: 'Em produção',       value: kpis.emProducao,                 icon: Factory,      color: 'bg-orange-500' },
+          { title: 'Pendentes hoje',    value: kpis.atrasados,                  icon: AlertTriangle, color: kpis.atrasados > 0 ? 'bg-red-500' : 'bg-gray-400' },
         ].map((c, i) => {
           const Icon = c.icon
           return (
@@ -156,7 +145,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pedidos de hoje por horário */}
+        {/* Entregas hoje por horário */}
         <div className="bg-white rounded-xl shadow-md p-5">
           <h2 className="font-bold text-bendito-verde-escuro mb-4 flex items-center gap-2">
             <Clock size={18} className="text-bendito-dourado-escuro" /> Entregas hoje por horário
@@ -187,7 +176,7 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        {/* Pedidos de hoje por rota */}
+        {/* Entregas hoje por rota */}
         <div className="bg-white rounded-xl shadow-md p-5">
           <h2 className="font-bold text-bendito-verde-escuro mb-4 flex items-center gap-2">
             <MapPin size={18} className="text-bendito-dourado-escuro" /> Entregas hoje por rota
@@ -278,7 +267,12 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Linha inferior — Alertas e Clientes em risco */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        {/* Alertas de estoque — componente inteligente */}
+        <AlertasEstoque />
+
         {/* Clientes em risco */}
         {clientesSemComprar.length > 0 && (
           <div className="bg-white rounded-xl shadow-md p-5">
@@ -301,27 +295,6 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Estoque baixo */}
-        {estoqueBaixo.length > 0 && (
-          <div className="bg-white rounded-xl shadow-md p-5">
-            <h2 className="font-bold text-bendito-verde-escuro mb-4 flex items-center gap-2">
-              <AlertTriangle size={18} className="text-orange-500" /> Estoque abaixo do mínimo
-            </h2>
-            <div className="space-y-2">
-              {estoqueBaixo.map((i: any) => (
-                <div key={i.nome} className="flex items-center justify-between py-2 border-b last:border-0">
-                  <p className="text-sm font-medium">{i.nome}</p>
-                  <span className="text-xs text-orange-600 font-semibold bg-orange-50 px-2 py-0.5 rounded-full">
-                    {i.quantidade_estoque} / mín {i.estoque_minimo} {i.unidade_medida}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <Link href="/dashboard/estoque" className="flex items-center gap-1 text-xs text-bendito-verde font-semibold mt-4 hover:underline">
-              Ver estoque completo <ChevronRight size={14} />
-            </Link>
-          </div>
-        )}
       </div>
     </div>
   )
