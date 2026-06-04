@@ -2,186 +2,228 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { FILIAL_ID, formatBRL, formatData, STATUS_FINANCEIRO, FORMAS_PAGAMENTO } from '@/lib/constants'
-import Modal from '@/components/Modal'
-import { Field, Input, Select, Textarea, PrimaryButton, SecondaryButton, PageHeader, Loading, EmptyState, StatusBadge } from '@/components/ui'
-import { Plus, Edit, Trash2, TrendingUp, TrendingDown, Wallet } from 'lucide-react'
+import { formatBRL, formatData } from '@/lib/constants'
+import { PageHeader, Loading } from '@/components/ui'
+import {
+  TrendingUp, TrendingDown, DollarSign, AlertTriangle,
+  RefreshCw, ChevronRight, Building2,
+} from 'lucide-react'
+import Link from 'next/link'
 
 export default function FinanceiroPage() {
   const supabase = createClient()
-  const [transacoes, setTransacoes] = useState<any[]>([])
-  const [planoContas, setPlanoContas] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [filtroTipo, setFiltroTipo] = useState<'todos' | 'receita' | 'despesa'>('todos')
-  const [modalOpen, setModalOpen] = useState(false)
-  const [editando, setEditando] = useState<any>(null)
-  const [salvando, setSalvando] = useState(false)
-  const [form, setForm] = useState<any>({})
+  const [resumo, setResumo] = useState<any[]>([])
+  const [filialFiltro, setFilialFiltro] = useState('todas')
+  const [filiais, setFiliais] = useState<any[]>([])
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [vencendoHoje, setVencendoHoje] = useState<any[]>([])
+  const [vencidos, setVencidos] = useState<any[]>([])
 
   async function load() {
     setLoading(true)
-    const [trans, pc] = await Promise.all([
-      supabase.from('transacoes_financeiras').select('*, plano_contas(nome, tipo)').order('data_vencimento', { ascending: false }).limit(200),
-      supabase.from('plano_contas').select('id, nome, tipo').eq('ativo', true).order('nome'),
+    await supabase.rpc('atualizar_status_vencidas')
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data: profile } = await supabase.from('profiles').select('papel').eq('id', user!.id).maybeSingle()
+    const admin = ['admin','matriz'].includes(profile?.papel || '')
+    setIsAdmin(admin)
+
+    const hoje = new Date().toISOString().split('T')[0]
+
+    const [res, fils, vh, venc] = await Promise.all([
+      supabase.from('vw_resumo_financeiro').select('*'),
+      supabase.from('filiais').select('id, nome').eq('ativo', true),
+      // Vencendo hoje — pagar
+      supabase.from('contas_pagar').select('id, descricao, valor_parcela, filial_id, filiais(nome)')
+        .eq('status', 'aberta').eq('vencimento', hoje).order('valor_parcela', { ascending: false }).limit(10),
+      // Vencidos — pagar
+      supabase.from('contas_pagar').select('id, descricao, valor_parcela, vencimento, filial_id, filiais(nome)')
+        .eq('status', 'vencida').order('vencimento').limit(10),
     ])
-    setTransacoes(trans.data || [])
-    setPlanoContas(pc.data || [])
+    setResumo(res.data || [])
+    setFiliais(fils.data || [])
+    setVencendoHoje(vh.data || [])
+    setVencidos(venc.data || [])
     setLoading(false)
   }
   useEffect(() => { load() }, [])
 
-  function abrirNovo() {
-    setEditando(null)
-    setForm({ tipo: 'receita', descricao: '', valor: 0, plano_conta_id: '', data_vencimento: new Date().toISOString().split('T')[0], status: 'pendente', forma_pagamento: 'dinheiro', observacoes: '' })
-    setModalOpen(true)
-  }
-  function abrirEdicao(t: any) { setEditando(t); setForm({ ...t }); setModalOpen(true) }
+  const filtrado = filialFiltro === 'todas' ? resumo : resumo.filter(r => r.filial_id === filialFiltro)
 
-  async function salvar() {
-    setSalvando(true)
-    const payload = {
-      filial_id: FILIAL_ID,
-      tipo: form.tipo,
-      descricao: form.descricao,
-      valor: Number(form.valor) || 0,
-      plano_conta_id: form.plano_conta_id || null,
-      data_vencimento: form.data_vencimento,
-      data_pagamento: form.status === 'pago' ? (form.data_pagamento || new Date().toISOString().split('T')[0]) : null,
-      status: form.status,
-      forma_pagamento: form.forma_pagamento || null,
-      observacoes: form.observacoes || null,
-    }
-    let error
-    if (editando) ({ error } = await supabase.from('transacoes_financeiras').update(payload).eq('id', editando.id))
-    else ({ error } = await supabase.from('transacoes_financeiras').insert(payload))
-    setSalvando(false)
-    if (error) { alert('Erro ao salvar: ' + error.message); return }
-    setModalOpen(false); load()
-  }
+  const totais = filtrado.reduce((acc, r) => ({
+    pagar_aberto:   (acc.pagar_aberto   || 0) + Number(r.pagar_aberto),
+    pagar_vencido:  (acc.pagar_vencido  || 0) + Number(r.pagar_vencido),
+    pago_mes:       (acc.pago_mes       || 0) + Number(r.pago_mes),
+    receber_aberto: (acc.receber_aberto || 0) + Number(r.receber_aberto),
+    receber_vencido:(acc.receber_vencido|| 0) + Number(r.receber_vencido),
+    recebido_mes:   (acc.recebido_mes   || 0) + Number(r.recebido_mes),
+  }), {})
 
-  async function marcarPago(t: any) {
-    const { error } = await supabase.from('transacoes_financeiras').update({ status: 'pago', data_pagamento: new Date().toISOString().split('T')[0] }).eq('id', t.id)
-    if (error) { alert('Erro: ' + error.message); return }
-    load()
-  }
+  const saldo = (totais.receber_aberto || 0) - (totais.pagar_aberto || 0)
+    - (totais.pagar_vencido || 0) - (totais.receber_vencido || 0)
 
-  async function excluir(t: any) {
-    if (!confirm(`Excluir "${t.descricao}"?`)) return
-    const { error } = await supabase.from('transacoes_financeiras').delete().eq('id', t.id)
-    if (error) { alert('Erro: ' + error.message); return }
-    load()
-  }
-
-  const filtradas = transacoes.filter((t) => filtroTipo === 'todos' || t.tipo === filtroTipo)
-  const totalReceitas = transacoes.filter((t) => t.tipo === 'receita' && t.status === 'pago').reduce((s, t) => s + Number(t.valor || 0), 0)
-  const totalDespesas = transacoes.filter((t) => t.tipo === 'despesa' && t.status === 'pago').reduce((s, t) => s + Number(t.valor || 0), 0)
-  const saldo = totalReceitas - totalDespesas
-  const aReceber = transacoes.filter((t) => t.tipo === 'receita' && t.status === 'pendente').reduce((s, t) => s + Number(t.valor || 0), 0)
+  if (loading) return <Loading />
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Financeiro" subtitle="Receitas, despesas e fluxo de caixa"
-        action={<PrimaryButton onClick={abrirNovo} className="flex items-center gap-2"><Plus size={20} /> Novo Lançamento</PrimaryButton>} />
+      <PageHeader title="Financeiro" subtitle="Contas a pagar, receber, fluxo de caixa e conciliação"
+        action={
+          <button onClick={load} className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-600 px-4 py-2 rounded-lg text-sm font-semibold transition">
+            <RefreshCw size={15}/> Atualizar
+          </button>
+        }
+      />
 
+      {/* Filtro de filial */}
+      {isAdmin && (
+        <div className="bg-white rounded-xl shadow-md p-4 flex flex-wrap gap-3 items-center">
+          <Building2 size={18} className="text-bendito-verde"/>
+          <span className="text-sm font-semibold text-gray-700">Unidade:</span>
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={() => setFilialFiltro('todas')}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold border transition ${filialFiltro === 'todas' ? 'bg-bendito-verde text-white border-bendito-verde' : 'bg-white border-gray-300 text-gray-600 hover:border-bendito-verde'}`}>
+              Consolidado
+            </button>
+            {filiais.map(f => (
+              <button key={f.id} onClick={() => setFilialFiltro(f.id)}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold border transition ${filialFiltro === f.id ? 'bg-bendito-verde text-white border-bendito-verde' : 'bg-white border-gray-300 text-gray-600 hover:border-bendito-verde'}`}>
+                {f.nome}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* KPIs principais */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl shadow-md p-5">
-          <div className="flex items-center gap-2 mb-2"><TrendingUp className="text-green-500" size={20} /><span className="text-xs text-gray-600">Receitas Pagas</span></div>
-          <p className="text-xl lg:text-2xl font-bold text-green-600">{formatBRL(totalReceitas)}</p>
-        </div>
-        <div className="bg-white rounded-xl shadow-md p-5">
-          <div className="flex items-center gap-2 mb-2"><TrendingDown className="text-red-500" size={20} /><span className="text-xs text-gray-600">Despesas Pagas</span></div>
-          <p className="text-xl lg:text-2xl font-bold text-red-600">{formatBRL(totalDespesas)}</p>
-        </div>
-        <div className="bg-white rounded-xl shadow-md p-5">
-          <div className="flex items-center gap-2 mb-2"><Wallet className="text-bendito-verde" size={20} /><span className="text-xs text-gray-600">Saldo</span></div>
-          <p className={`text-xl lg:text-2xl font-bold ${saldo >= 0 ? 'text-bendito-verde' : 'text-red-600'}`}>{formatBRL(saldo)}</p>
-        </div>
-        <div className="bg-white rounded-xl shadow-md p-5">
-          <div className="flex items-center gap-2 mb-2"><TrendingUp className="text-bendito-dourado-escuro" size={20} /><span className="text-xs text-gray-600">A Receber</span></div>
-          <p className="text-xl lg:text-2xl font-bold text-bendito-dourado-escuro">{formatBRL(aReceber)}</p>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-md p-4 flex gap-2">
         {[
-          { v: 'todos', l: 'Todos' },
-          { v: 'receita', l: 'Receitas' },
-          { v: 'despesa', l: 'Despesas' },
-        ].map((b) => (
-          <button key={b.v} onClick={() => setFiltroTipo(b.v as any)} className={`px-4 py-2 rounded-lg text-sm font-semibold ${filtroTipo === b.v ? 'bg-bendito-verde text-white' : 'bg-gray-100 text-gray-700'}`}>{b.l}</button>
-        ))}
+          { label: 'A Receber',      valor: totais.receber_aberto,  cor: 'text-green-600',  bg: 'bg-green-50',  icon: TrendingUp,   border: 'border-green-200' },
+          { label: 'A Pagar',        valor: totais.pagar_aberto,    cor: 'text-red-600',    bg: 'bg-red-50',    icon: TrendingDown, border: 'border-red-200' },
+          { label: 'Recebido/mês',   valor: totais.recebido_mes,    cor: 'text-blue-600',   bg: 'bg-blue-50',   icon: DollarSign,   border: 'border-blue-200' },
+          { label: 'Pago/mês',       valor: totais.pago_mes,        cor: 'text-purple-600', bg: 'bg-purple-50', icon: DollarSign,   border: 'border-purple-200' },
+        ].map(c => {
+          const Icon = c.icon
+          return (
+            <div key={c.label} className={`${c.bg} border ${c.border} rounded-xl p-5`}>
+              <div className="flex items-center gap-2 mb-2">
+                <Icon size={18} className={c.cor}/>
+                <p className="text-xs text-gray-500">{c.label}</p>
+              </div>
+              <p className={`text-2xl font-bold ${c.cor}`}>{formatBRL(c.valor || 0)}</p>
+            </div>
+          )
+        })}
       </div>
 
-      {loading ? <Loading /> : filtradas.length === 0 ? <EmptyState message="Nenhum lançamento encontrado." /> : (
+      {/* Alertas de vencidos */}
+      {(vencidos.length > 0 || vencendoHoje.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Vencendo hoje */}
+          {vencendoHoje.length > 0 && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-5">
+              <p className="text-sm font-bold text-yellow-700 flex items-center gap-2 mb-3">
+                <AlertTriangle size={16}/> Vencendo Hoje ({vencendoHoje.length})
+              </p>
+              <div className="space-y-2">
+                {vencendoHoje.map(c => (
+                  <div key={c.id} className="flex justify-between items-center text-sm">
+                    <div className="min-w-0">
+                      <p className="font-medium text-gray-700 truncate">{c.descricao}</p>
+                      <p className="text-xs text-gray-400">{(c.filiais as any)?.nome}</p>
+                    </div>
+                    <span className="font-bold text-red-600 ml-2">{formatBRL(c.valor_parcela)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Vencidos */}
+          {vencidos.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-5">
+              <p className="text-sm font-bold text-red-700 flex items-center gap-2 mb-3">
+                <AlertTriangle size={16}/> Em Atraso ({vencidos.length})
+              </p>
+              <div className="space-y-2">
+                {vencidos.map(c => (
+                  <div key={c.id} className="flex justify-between items-center text-sm">
+                    <div className="min-w-0">
+                      <p className="font-medium text-gray-700 truncate">{c.descricao}</p>
+                      <p className="text-xs text-red-400">{formatData(c.vencimento)} · {(c.filiais as any)?.nome}</p>
+                    </div>
+                    <span className="font-bold text-red-600 ml-2">{formatBRL(c.valor_parcela)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Saldo projetado */}
+      <div className={`rounded-xl p-6 border-2 ${saldo >= 0 ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'}`}>
+        <p className="text-sm text-gray-600 mb-1">Posição financeira atual</p>
+        <p className={`text-4xl font-bold ${saldo >= 0 ? 'text-green-700' : 'text-red-700'}`}>{formatBRL(saldo)}</p>
+        <p className="text-xs text-gray-500 mt-1">A Receber − A Pagar (aberto + vencido)</p>
+      </div>
+
+      {/* Por filial (se consolidado) */}
+      {filialFiltro === 'todas' && resumo.length > 1 && (
         <div className="bg-white rounded-xl shadow-md overflow-hidden">
+          <div className="px-5 py-4 border-b bg-gray-50">
+            <h2 className="font-bold text-bendito-verde-escuro">Por Unidade</h2>
+          </div>
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-bendito-verde-escuro text-white">
-                <tr>
-                  <th className="px-4 py-3 text-left text-sm">Descrição</th>
-                  <th className="px-4 py-3 text-left text-sm">Conta</th>
-                  <th className="px-4 py-3 text-left text-sm">Valor</th>
-                  <th className="px-4 py-3 text-left text-sm">Vencimento</th>
-                  <th className="px-4 py-3 text-left text-sm">Status</th>
-                  <th className="px-4 py-3 text-left text-sm">Ações</th>
-                </tr>
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b">
+                <tr>{['Unidade','A Receber','A Pagar','Vencido P.','Vencido R.','Recebido/mês','Pago/mês'].map(h =>
+                  <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">{h}</th>
+                )}</tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
-                {filtradas.map((t) => {
-                  const st = STATUS_FINANCEIRO.find((s) => s.value === t.status)
-                  return (
-                    <tr key={t.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm">
-                        <div className="font-medium">{t.descricao}</div>
-                        <div className="text-xs text-gray-500 capitalize">{t.tipo}</div>
-                      </td>
-                      <td className="px-4 py-3 text-sm">{t.plano_contas?.nome || '-'}</td>
-                      <td className={`px-4 py-3 text-sm font-semibold ${t.tipo === 'receita' ? 'text-green-600' : 'text-red-600'}`}>
-                        {t.tipo === 'receita' ? '+' : '-'} {formatBRL(t.valor)}
-                      </td>
-                      <td className="px-4 py-3 text-sm">{formatData(t.data_vencimento)}</td>
-                      <td className="px-4 py-3">{st && <StatusBadge label={st.label} cor={st.cor} />}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-2">
-                          {t.status !== 'pago' && <button onClick={() => marcarPago(t)} className="text-xs bg-green-100 hover:bg-green-200 text-green-700 px-2 py-1 rounded">Pagar</button>}
-                          <button onClick={() => abrirEdicao(t)} className="p-1.5 bg-bendito-dourado/20 hover:bg-bendito-dourado/40 text-bendito-verde-escuro rounded"><Edit size={14} /></button>
-                          <button onClick={() => excluir(t)} className="p-1.5 bg-red-100 hover:bg-red-200 text-red-600 rounded"><Trash2 size={14} /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
+              <tbody className="divide-y">
+                {resumo.map(r => (
+                  <tr key={r.filial_id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-semibold text-bendito-verde-escuro">{r.filial_nome}</td>
+                    <td className="px-4 py-3 text-green-600 font-semibold">{formatBRL(r.receber_aberto)}</td>
+                    <td className="px-4 py-3 text-red-600 font-semibold">{formatBRL(r.pagar_aberto)}</td>
+                    <td className="px-4 py-3 text-red-500">{formatBRL(r.pagar_vencido)}</td>
+                    <td className="px-4 py-3 text-orange-500">{formatBRL(r.receber_vencido)}</td>
+                    <td className="px-4 py-3 text-blue-600">{formatBRL(r.recebido_mes)}</td>
+                    <td className="px-4 py-3 text-purple-600">{formatBRL(r.pago_mes)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         </div>
       )}
 
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editando ? 'Editar Lançamento' : 'Novo Lançamento'}>
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Tipo" required><Select value={form.tipo || 'receita'} onChange={(e) => setForm({ ...form, tipo: e.target.value, plano_conta_id: '' })}><option value="receita">Receita</option><option value="despesa">Despesa</option></Select></Field>
-            <Field label="Status"><Select value={form.status || 'pendente'} onChange={(e) => setForm({ ...form, status: e.target.value })}>{STATUS_FINANCEIRO.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</Select></Field>
-          </div>
-          <Field label="Descrição" required><Input value={form.descricao || ''} onChange={(e) => setForm({ ...form, descricao: e.target.value })} /></Field>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Valor" required><Input type="number" step="0.01" value={form.valor ?? 0} onChange={(e) => setForm({ ...form, valor: e.target.value })} /></Field>
-            <Field label="Vencimento" required><Input type="date" value={form.data_vencimento || ''} onChange={(e) => setForm({ ...form, data_vencimento: e.target.value })} /></Field>
-          </div>
-          <Field label="Plano de Contas">
-            <Select value={form.plano_conta_id || ''} onChange={(e) => setForm({ ...form, plano_conta_id: e.target.value })}>
-              <option value="">Sem conta</option>
-              {planoContas.filter((pc) => pc.tipo === form.tipo).map((pc) => <option key={pc.id} value={pc.id}>{pc.nome}</option>)}
-            </Select>
-          </Field>
-          <Field label="Forma de Pagamento"><Select value={form.forma_pagamento || 'dinheiro'} onChange={(e) => setForm({ ...form, forma_pagamento: e.target.value })}>{FORMAS_PAGAMENTO.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}</Select></Field>
-          <Field label="Observações"><Textarea rows={2} value={form.observacoes || ''} onChange={(e) => setForm({ ...form, observacoes: e.target.value })} /></Field>
-          <div className="flex gap-3 pt-2">
-            <SecondaryButton onClick={() => setModalOpen(false)} className="flex-1">Cancelar</SecondaryButton>
-            <PrimaryButton onClick={salvar} disabled={salvando || !form.descricao || !form.valor} className="flex-1">{salvando ? 'Salvando...' : 'Salvar'}</PrimaryButton>
-          </div>
-        </div>
-      </Modal>
+      {/* Acesso rápido aos submódulos */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { href: '/dashboard/financeiro/contas-pagar',    cor: 'bg-red-100',    icon: TrendingDown, iconCor: 'text-red-600',    label: 'Contas a Pagar',    sub: `${formatBRL(totais.pagar_aberto || 0)} em aberto` },
+          { href: '/dashboard/financeiro/contas-receber',  cor: 'bg-green-100',  icon: TrendingUp,   iconCor: 'text-green-600',  label: 'Contas a Receber',  sub: `${formatBRL(totais.receber_aberto || 0)} em aberto` },
+          { href: '/dashboard/financeiro/fluxo-caixa',     cor: 'bg-blue-100',   icon: DollarSign,   iconCor: 'text-blue-600',   label: 'Fluxo de Caixa',    sub: 'Projeção 30/60/90 dias' },
+          { href: '/dashboard/financeiro/conciliacao',     cor: 'bg-purple-100', icon: Building2,    iconCor: 'text-purple-600', label: 'Conciliação',        sub: 'Extrato bancário' },
+        ].map(item => {
+          const Icon = item.icon
+          return (
+            <Link key={item.href} href={item.href}
+              className="bg-white rounded-xl shadow-md p-5 hover:shadow-lg hover:ring-2 hover:ring-bendito-dourado transition group flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`${item.cor} p-3 rounded-xl`}>
+                  <Icon size={20} className={item.iconCor}/>
+                </div>
+                <div>
+                  <p className="font-bold text-bendito-verde-escuro text-sm">{item.label}</p>
+                  <p className="text-xs text-gray-500">{item.sub}</p>
+                </div>
+              </div>
+              <ChevronRight size={18} className="text-gray-400 group-hover:text-bendito-verde"/>
+            </Link>
+          )
+        })}
+      </div>
     </div>
   )
 }
