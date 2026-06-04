@@ -1,21 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* ── PWA Safe Area — apenas cliente e vendedor no mobile ── */
 :root {
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* Bottom nav com safe area — usado nos layouts mobile */
 .safe-area-pb {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* Scroll suave no iOS */
 .ios-scroll {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
 }
 
-/* Ocultar scrollbar */
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-/* NÃO adicionar padding-top automático — não interfere no dashboard admin */
