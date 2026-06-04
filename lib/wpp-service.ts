@@ -32,7 +32,7 @@ export type WppVariaveis = {
 export function aplicarVariaveis(template: string, vars: WppVariaveis): string {
   let msg = template
   Object.entries(vars).forEach(([k, v]) => {
-    msg = msg.replace(new RegExp(`{{${k}}}`, 'g'), v || '')
+    msg = msg.replace(new RegExp(`{{${k}}}`, 'g'), String(v ?? ''))
   })
   return msg
 }
