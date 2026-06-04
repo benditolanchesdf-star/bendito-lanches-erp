@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { FILIAL_ID } from '@/lib/constants'
 import { PageHeader, Loading, EmptyState, Field, Input, PrimaryButton, SecondaryButton } from '@/components/ui'
 import Modal from '@/components/Modal'
-import { Plus, Edit, RefreshCw, Building2, Check } from 'lucide-react'
+import { Plus, Edit, RefreshCw, Building2, Check, ArrowLeft } from 'lucide-react'
 
 export default function AtendentesPage() {
   const supabase = createClient()
@@ -87,6 +88,12 @@ export default function AtendentesPage() {
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <Link href="/dashboard/usuarios" className="flex items-center gap-1 text-sm text-gray-500 hover:text-bendito-verde transition">
+          <ArrowLeft size={16} /> Voltar
+        </Link>
+      </div>
+
       <PageHeader title="Atendentes PDV" subtitle="Frente de caixa — senha inicial: 1234"
         action={
           <PrimaryButton onClick={() => { setEditando(null); setForm({ nome: '', filial_id: FILIAL_ID }); setModalOpen(true) }}
