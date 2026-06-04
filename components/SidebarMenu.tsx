@@ -40,7 +40,6 @@ const MENUS: Record<string, MenuItem[]> = {
     { icon: ShoppingCart,    label: 'Pedidos',           href: '/dashboard/pedidos' },
     { icon: ArrowLeftRight,  label: 'Pedidos Internos',  href: '/dashboard/pedidos-internos' },
     { icon: ShoppingBag,     label: 'Pedidos de Compra', href: '/dashboard/pedidos-compra' },
-    { icon: Users,           label: 'Clientes',          href: '/dashboard/clientes' },
     { icon: Package,         label: 'Produtos',          href: '/dashboard/produtos' },
     { icon: Utensils,        label: 'Produção',          href: '/dashboard/producao' },
     { icon: Truck,           label: 'Agenda',            href: '/dashboard/agenda' },
@@ -85,10 +84,7 @@ export default function SidebarMenu({ tipo, titulo, subtitulo }: SidebarMenuProp
       </button>
 
       {isOpen && (
-        <div
-          className="lg:hidden fixed inset-0 bg-black/50 z-40"
-          onClick={() => setIsOpen(false)}
-        />
+        <div className="lg:hidden fixed inset-0 bg-black/50 z-40" onClick={() => setIsOpen(false)} />
       )}
 
       <aside className={`
