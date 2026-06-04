@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Shield, Users, Monitor, UserCog } from 'lucide-react'
+import { Shield, Users, Monitor, UserCog, Store } from 'lucide-react'
 import { PageHeader } from '@/components/ui'
 
 const SUBMENUS = [
@@ -35,7 +35,15 @@ const SUBMENUS = [
     cor: 'bg-blue-100',
     iconCor: 'text-blue-600',
     label: 'Vendedores',
-    desc: 'Carteira de clientes',
+    desc: 'Carteira de clientes externos',
+  },
+  {
+    href: '/dashboard/clientes',
+    icon: Store,
+    cor: 'bg-green-100',
+    iconCor: 'text-green-600',
+    label: 'Clientes',
+    desc: 'Clientes cadastrados',
   },
 ]
 
@@ -43,7 +51,7 @@ export default function UsuariosIndexPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Usuários" subtitle="Gerencie todos os perfis de acesso ao sistema" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {SUBMENUS.map(item => {
           const Icon = item.icon
           return (
