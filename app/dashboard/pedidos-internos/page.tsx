@@ -247,7 +247,7 @@ export default function PedidosInternosPage() {
       )}
 
       {/* ── Modal novo pedido ── */}
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Novo Pedido Interno" size="xl">
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Novo Pedido Interno">
         <div className="flex flex-col gap-4 max-h-[80vh] overflow-y-auto pr-1">
 
           {/* Filial solicitante (admin) */}
