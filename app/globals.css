@@ -1,19 +1,9 @@
-/* ── PWA Safe Area (notch, home bar) ─────────────────── */
+/* ── PWA Safe Area — apenas cliente e vendedor no mobile ── */
 :root {
-  --safe-area-top:    env(safe-area-inset-top, 0px);
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
-  --safe-area-left:   env(safe-area-inset-left, 0px);
-  --safe-area-right:  env(safe-area-inset-right, 0px);
 }
 
-/* Evitar seleção de texto em elementos de UI */
-.no-select {
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* Bottom nav com safe area */
+/* Bottom nav com safe area — usado nos layouts mobile */
 .safe-area-pb {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -24,25 +14,8 @@
   overscroll-behavior-y: contain;
 }
 
-/* Ocultar scrollbar mas manter scroll */
+/* Ocultar scrollbar */
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* Animação de entrada para bottom nav items */
-@keyframes pop-in {
-  0%   { transform: scale(0.8); opacity: 0; }
-  70%  { transform: scale(1.1); }
-  100% { transform: scale(1); opacity: 1; }
-}
-.pop-in { animation: pop-in 0.2s ease-out; }
-
-/* Status bar iOS em modo standalone */
-@media (display-mode: standalone) {
-  body { padding-top: env(safe-area-inset-top); }
-}
-
-/* Tela cheia no mobile */
-html, body {
-  overscroll-behavior: none;
-  -webkit-font-smoothing: antialiased;
-}
+/* NÃO adicionar padding-top automático — não interfere no dashboard admin */
