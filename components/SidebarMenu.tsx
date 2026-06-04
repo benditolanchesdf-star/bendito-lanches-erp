@@ -40,7 +40,7 @@ const MENUS: Record<string, MenuItem[]> = {
     { icon: ShoppingCart,    label: 'Pedidos',           href: '/dashboard/pedidos-index' },
     { icon: Package,         label: 'Produtos',          href: '/dashboard/produtos' },
     { icon: Utensils,        label: 'Produção',          href: '/dashboard/producao' },
-    { icon: Truck,           label: 'Agenda',            href: '/dashboard/agenda' },
+    { icon: Truck,           label: 'Entregas',          href: '/dashboard/entregas/agenda' },
     { icon: BarChart2,       label: 'Estoque',           href: '/dashboard/estoque' },
     { icon: Calculator,      label: 'Precificação',      href: '/dashboard/precificacao' },
     { icon: TrendingDown,    label: 'Despesas',          href: '/dashboard/despesas' },
@@ -74,8 +74,10 @@ export default function SidebarMenu({ tipo, titulo, subtitulo }: SidebarMenuProp
 
   return (
     <>
-      <button onClick={() => setIsOpen(!isOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-bendito-dourado rounded-lg shadow-lg">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-bendito-dourado rounded-lg shadow-lg"
+      >
         {isOpen ? <X size={24} /> : <Menu size={24} />}
       </button>
 
@@ -87,8 +89,8 @@ export default function SidebarMenu({ tipo, titulo, subtitulo }: SidebarMenuProp
         fixed lg:sticky top-0 left-0 h-screen w-72 bg-bendito-verde-escuro text-white
         transform transition-transform duration-300 ease-in-out
         ${isOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 z-40
-        flex flex-col`}>
-
+        flex flex-col`}
+      >
         <div className="p-6 border-b border-bendito-verde">
           <h1 className="text-2xl font-bold text-bendito-dourado">🍕 {titulo}</h1>
           <p className="text-xs text-bendito-creme mt-1">{subtitulo}</p>
@@ -106,11 +108,15 @@ export default function SidebarMenu({ tipo, titulo, subtitulo }: SidebarMenuProp
                   pathname.startsWith(item.href))
               return (
                 <li key={item.href}>
-                  <Link href={item.href} onClick={() => setIsOpen(false)}
+                  <Link
+                    href={item.href}
+                    onClick={() => setIsOpen(false)}
                     className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all
                       ${isActive
                         ? 'bg-bendito-dourado text-bendito-verde-escuro font-semibold'
-                        : 'hover:bg-bendito-verde text-bendito-creme'}`}>
+                        : 'hover:bg-bendito-verde text-bendito-creme'
+                      }`}
+                  >
                     <Icon size={20} />
                     <span>{item.label}</span>
                   </Link>
@@ -121,8 +127,10 @@ export default function SidebarMenu({ tipo, titulo, subtitulo }: SidebarMenuProp
         </nav>
 
         <div className="p-4 border-t border-bendito-verde">
-          <button onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-red-600 text-bendito-creme transition-all">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-red-600 text-bendito-creme transition-all"
+          >
             <LogOut size={20} />
             <span>Sair</span>
           </button>
