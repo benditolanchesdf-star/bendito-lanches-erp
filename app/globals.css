@@ -1,70 +1,48 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
+/* ── PWA Safe Area (notch, home bar) ─────────────────── */
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 255, 255, 255;
-  --background-end-rgb: 245, 241, 232;
+  --safe-area-top:    env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left:   env(safe-area-inset-left, 0px);
+  --safe-area-right:  env(safe-area-inset-right, 0px);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 26, 58, 26;
-    --background-end-rgb: 0, 0, 0;
-  }
+/* Evitar seleção de texto em elementos de UI */
+.no-select {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
-body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+/* Bottom nav com safe area */
+.safe-area-pb {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+/* Scroll suave no iOS */
+.ios-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+/* Ocultar scrollbar mas manter scroll */
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Animação de entrada para bottom nav items */
+@keyframes pop-in {
+  0%   { transform: scale(0.8); opacity: 0; }
+  70%  { transform: scale(1.1); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.pop-in { animation: pop-in 0.2s ease-out; }
+
+/* Status bar iOS em modo standalone */
+@media (display-mode: standalone) {
+  body { padding-top: env(safe-area-inset-top); }
 }
 
-::-webkit-scrollbar-track {
-  @apply bg-bendito-creme;
-}
-
-::-webkit-scrollbar-thumb {
-  @apply bg-bendito-dourado rounded-full;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  @apply bg-bendito-dourado-escuro;
-}
-
-/* Loading animation */
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.animate-spin {
-  animation: spin 1s linear infinite;
-}
-
-/* Fade in animation */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.animate-fade-in {
-  animation: fadeIn 0.3s ease-out;
+/* Tela cheia no mobile */
+html, body {
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
 }
