@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { PageHeader, Loading, EmptyState, Field, Input, PrimaryButton, SecondaryButton } from '@/components/ui'
 import Modal from '@/components/Modal'
-import { Plus, Eye, EyeOff, RefreshCw, Check, X } from 'lucide-react'
+import { Plus, Eye, EyeOff, Check, X, ArrowLeft } from 'lucide-react'
 
 const PAPEL = 'admin'
 const TITULO = 'Administradores'
@@ -37,21 +38,14 @@ export default function AdministradoresPage() {
   async function criarUsuario() {
     if (!form.nome || !form.email) { setErro('Preencha nome e email.'); return }
     setSalvando(true); setErro(''); setSucesso('')
-
     const { data, error } = await supabase.rpc('criar_usuario_admin', {
       p_email: form.email,
       p_nome: form.nome,
       p_papel: PAPEL,
       p_filial_id: form.filial_id || null,
     })
-
-    if (error) {
-      setErro(error.message)
-      setSalvando(false)
-      return
-    }
-
-    setSucesso(`Usuário criado! Senha temporária: Mudar123! — o usuário deverá alterá-la no primeiro acesso.`)
+    if (error) { setErro(error.message); setSalvando(false); return }
+    setSucesso(`Usuário criado com sucesso! Senha temporária: Mudar123!`)
     setSalvando(false)
     setForm({ nome: '', email: '', filial_id: '' })
     load()
@@ -66,11 +60,17 @@ export default function AdministradoresPage() {
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <Link href="/dashboard/usuarios" className="flex items-center gap-1 text-sm text-gray-500 hover:text-bendito-verde transition">
+          <ArrowLeft size={16} /> Voltar
+        </Link>
+      </div>
+
       <PageHeader title={TITULO} subtitle={DESC}
         action={
           <PrimaryButton onClick={() => { setErro(''); setSucesso(''); setModalOpen(true) }}
             className="flex items-center gap-2">
-            <Plus size={16} /> Novo {TITULO.slice(0, -1)}
+            <Plus size={16} /> Novo Administrador
           </PrimaryButton>
         }
       />
@@ -79,7 +79,7 @@ export default function AdministradoresPage() {
         <div className="bg-white rounded-xl shadow-md overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
-              <tr>{['Nome', 'Email (via Auth)', 'Filial', 'Status', 'Ações'].map(h =>
+              <tr>{['Nome', 'Filial', 'Status', 'Ações'].map(h =>
                 <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">{h}</th>
               )}</tr>
             </thead>
@@ -87,7 +87,6 @@ export default function AdministradoresPage() {
               {usuarios.map(u => (
                 <tr key={u.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-semibold text-bendito-verde-escuro">{u.nome}</td>
-                  <td className="px-4 py-3 text-gray-400 text-xs font-mono">{u.id.slice(0, 8)}...</td>
                   <td className="px-4 py-3 text-gray-500">{(u.filiais as any)?.nome || '—'}</td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${u.ativo ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
@@ -108,7 +107,7 @@ export default function AdministradoresPage() {
         </div>
       )}
 
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={`Novo ${TITULO.slice(0, -1)}`}>
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={`Novo Administrador`}>
         <div className="space-y-4">
           <Field label="Nome completo" required>
             <Input value={form.nome} onChange={e => setForm({...form, nome: e.target.value})} placeholder="Nome completo" />
