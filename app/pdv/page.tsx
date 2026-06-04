@@ -5,9 +5,9 @@ import { createClient } from '@/lib/supabase/client'
 import { formatBRL } from '@/lib/constants'
 import {
   Search, Plus, Minus, Trash2, ShoppingCart, X, CheckCircle,
-  User, LogOut, Package, BarChart2, RefreshCw,
-  Eye, EyeOff, Lock, Building2, AlertTriangle,
-  Banknote, Smartphone, CreditCard,
+  User, LogOut, Package, BarChart2, RefreshCw, Eye, EyeOff,
+  Lock, Building2, AlertTriangle, Banknote, Smartphone,
+  CreditCard, Printer, ArrowDownCircle, ArrowUpCircle, History,
 } from 'lucide-react'
 
 const MATRIZ_ID = '11111111-1111-1111-1111-111111111111'
@@ -35,11 +35,13 @@ export default function PDVPage() {
   const [atendente, setAtendente] = useState<any>(null)
   const [caixaAberto, setCaixaAberto] = useState<any>(null)
 
+  // Login
   const [atendenteSel, setAtendenteSel] = useState('')
   const [senhaInput, setSenhaInput] = useState('')
   const [showSenha, setShowSenha] = useState(false)
   const [erroLogin, setErroLogin] = useState('')
 
+  // Trocar senha
   const [novaSenha, setNovaSenha] = useState('')
   const [confirmaSenha, setConfirmaSenha] = useState('')
   const [showNovaSenha, setShowNovaSenha] = useState(false)
@@ -48,6 +50,7 @@ export default function PDVPage() {
 
   const [valorAbertura, setValorAbertura] = useState('')
 
+  // Produtos
   const [produtos, setProdutos] = useState<any[]>([])
   const [produtosPed, setProdutosPed] = useState<any[]>([])
   const [busca, setBusca] = useState('')
@@ -55,6 +58,7 @@ export default function PDVPage() {
   const [clienteNome, setClienteNome] = useState('')
   const [desconto, setDesconto] = useState('')
 
+  // Pagamento
   const [salvando, setSalvando] = useState(false)
   const [vendaConcluida, setVendaConcluida] = useState<any>(null)
   const [modalFechamento, setModalFechamento] = useState(false)
@@ -63,6 +67,25 @@ export default function PDVPage() {
   const [valPix, setValPix] = useState('')
   const [valCartao, setValCartao] = useState('')
 
+  // Cancelamento de venda
+  const [modalCancelamento, setModalCancelamento] = useState(false)
+  const [vendaCancelar, setVendaCancelar] = useState<any>(null)
+  const [motivoCancelamento, setMotivoCancelamento] = useState('')
+  const [cancelando, setCancelando] = useState(false)
+
+  // Reimpressão
+  const [modalHistorico, setModalHistorico] = useState(false)
+  const [vendasHoje, setVendasHoje] = useState<any[]>([])
+  const [loadingVendas, setLoadingVendas] = useState(false)
+
+  // Sangria / Suprimento
+  const [modalMovimentacao, setModalMovimentacao] = useState(false)
+  const [tipoMovimentacao, setTipoMovimentacao] = useState<'sangria'|'suprimento'>('sangria')
+  const [valorMovimentacao, setValorMovimentacao] = useState('')
+  const [motivoMovimentacao, setMotivoMovimentacao] = useState('')
+  const [salvandoMov, setSalvandoMov] = useState(false)
+
+  // Pedido interno
   const [itensPed, setItensPed] = useState<ItemPedido[]>([])
   const [obsPed, setObsPed] = useState('')
   const [salvandoPed, setSalvandoPed] = useState(false)
@@ -71,6 +94,7 @@ export default function PDVPage() {
   const [outroQtd, setOutroQtd] = useState(1)
   const [outroUnidade, setOutroUnidade] = useState('un')
 
+  // Estoque
   const [estoqueItems, setEstoqueItems] = useState<any[]>([])
   const [alertas, setAlertas] = useState<any[]>([])
   const [resumo, setResumo] = useState<any>(null)
@@ -82,11 +106,9 @@ export default function PDVPage() {
 
   async function selecionarFilial(f: any) {
     setFilialSel(f)
-    const { data } = await supabase
-      .from('atendentes_pdv')
+    const { data } = await supabase.from('atendentes_pdv')
       .select('*, atendente_filiais!inner(filial_id)')
-      .eq('atendente_filiais.filial_id', f.id)
-      .eq('ativo', true).order('nome')
+      .eq('atendente_filiais.filial_id', f.id).eq('ativo', true).order('nome')
     setAtendentes(data || [])
     setFase('login')
   }
@@ -99,8 +121,7 @@ export default function PDVPage() {
     setAtendente(at)
     if (at.primeiro_acesso) { setFase('trocar_senha'); return }
     const { data: caixa } = await supabase.from('caixas_pdv')
-      .select('*').eq('filial_id', filialSel.id)
-      .eq('atendente_id', at.id).eq('status', 'aberto').maybeSingle()
+      .select('*').eq('filial_id', filialSel.id).eq('atendente_id', at.id).eq('status', 'aberto').maybeSingle()
     if (caixa) { setCaixaAberto(caixa); await carregarProdutos(filialSel); setFase('pdv') }
     else setFase('caixa')
   }
@@ -126,49 +147,54 @@ export default function PDVPage() {
     setFase('pdv')
   }
 
-  // Usa vw_produtos_filial — retorna preço correto por filial
   async function carregarProdutos(f: any) {
     const [{ data: prodCaixa }, { data: prodMatriz }] = await Promise.all([
       supabase.from('vw_produtos_filial')
         .select('produto_id, nome, preco_varejo, unidade_medida')
-        .eq('filial_id', f.id)
-        .eq('ativo_na_filial', true)
-        .order('nome'),
+        .eq('filial_id', f.id).eq('ativo_na_filial', true).order('nome'),
       supabase.from('vw_produtos_filial')
         .select('produto_id, nome, unidade_medida')
-        .eq('filial_id', MATRIZ_ID)
-        .eq('ativo_na_filial', true)
-        .order('nome'),
+        .eq('filial_id', MATRIZ_ID).eq('ativo_na_filial', true).order('nome'),
     ])
-    // Mapear produto_id → id para compatibilidade com o carrinho
     setProdutos((prodCaixa || []).map((p: any) => ({ ...p, id: p.produto_id })))
     setProdutosPed((prodMatriz || []).map((p: any) => ({ ...p, id: p.produto_id })))
   }
 
   async function carregarEstoque() {
     const [{ data: ef }, { data: al }] = await Promise.all([
-      supabase.from('produto_filial')
-        .select('*, produtos(nome, unidade_medida)')
-        .eq('filial_id', filialSel.id),
-      supabase.from('vw_alertas_estoque').select('*')
-        .eq('filial_id', filialSel.id).neq('nivel_alerta', 'normal'),
+      supabase.from('produto_filial').select('*, produtos(nome, unidade_medida)').eq('filial_id', filialSel.id),
+      supabase.from('vw_alertas_estoque').select('*').eq('filial_id', filialSel.id).neq('nivel_alerta', 'normal'),
     ])
-    setEstoqueItems(ef || [])
-    setAlertas(al || [])
+    setEstoqueItems(ef || []); setAlertas(al || [])
   }
 
   async function carregarResumo() {
     const { data: vendas } = await supabase.from('vendas_pdv')
       .select('total, valor_dinheiro, valor_pix, valor_cartao')
       .eq('filial_id', filialSel.id).eq('caixa_id', caixaAberto?.id).eq('status', 'concluida')
+    const { data: movs } = await supabase.from('caixa_movimentacoes')
+      .select('tipo, valor').eq('caixa_id', caixaAberto?.id)
     const arr = vendas || []
+    const sangria   = (movs || []).filter(m => m.tipo === 'sangria').reduce((s, m) => s + Number(m.valor), 0)
+    const suprimento= (movs || []).filter(m => m.tipo === 'suprimento').reduce((s, m) => s + Number(m.valor), 0)
     setResumo({
       totalVendas: arr.length,
       totalFaturado: arr.reduce((s, v) => s + Number(v.total || 0), 0),
       totalDinheiro: arr.reduce((s, v) => s + Number(v.valor_dinheiro || 0), 0),
       totalPix: arr.reduce((s, v) => s + Number(v.valor_pix || 0), 0),
       totalCartao: arr.reduce((s, v) => s + Number(v.valor_cartao || 0), 0),
+      sangria, suprimento,
     })
+  }
+
+  async function carregarVendasHoje() {
+    setLoadingVendas(true)
+    const { data } = await supabase.from('vendas_pdv')
+      .select('*, venda_pdv_itens(nome_produto, quantidade, preco_unitario)')
+      .eq('caixa_id', caixaAberto?.id)
+      .order('created_at', { ascending: false })
+    setVendasHoje(data || [])
+    setLoadingVendas(false)
   }
 
   useEffect(() => {
@@ -177,6 +203,7 @@ export default function PDVPage() {
     if (aba === 'resumo') carregarResumo()
   }, [aba, fase])
 
+  // Carrinho
   const subtotal = carrinho.reduce((s, i) => s + i.preco * i.quantidade, 0)
   const descontoVal = Number(desconto) || 0
   const total = Math.max(subtotal - descontoVal, 0)
@@ -202,15 +229,12 @@ export default function PDVPage() {
       cartao:   ['credito','debito'].includes(forma)    ? total : forma === 'misto' ? Number(valCartao)||0 : 0,
     }
     const trocoFinal = forma === 'dinheiro' ? Math.max((vDin ?? total) - total, 0) : 0
-
     const { data: venda } = await supabase.from('vendas_pdv').insert({
       filial_id: filialSel.id, caixa_id: caixaAberto.id, atendente_id: atendente.id,
       cliente_nome: clienteNome || null, subtotal, desconto: descontoVal, total,
-      forma_pagamento: forma,
-      valor_dinheiro: vPag.dinheiro, valor_pix: vPag.pix, valor_cartao: vPag.cartao,
-      troco: trocoFinal,
+      forma_pagamento: forma, valor_dinheiro: vPag.dinheiro, valor_pix: vPag.pix,
+      valor_cartao: vPag.cartao, troco: trocoFinal, status: 'concluida',
     }).select('*').single()
-
     if (venda) {
       await supabase.from('venda_pdv_itens').insert(
         carrinho.map(i => ({
@@ -219,14 +243,14 @@ export default function PDVPage() {
           subtotal: i.preco * i.quantidade,
         }))
       )
-      // Dar baixa no estoque usando produto_filial
       for (const item of carrinho) {
         const { data: pf } = await supabase.from('produto_filial')
           .select('estoque_atual').eq('filial_id', filialSel.id).eq('produto_id', item.produto_id).maybeSingle()
         if (pf) {
-          await supabase.from('produto_filial')
-            .update({ estoque_atual: Math.max(0, Number(pf.estoque_atual) - item.quantidade), updated_at: new Date().toISOString() })
-            .eq('filial_id', filialSel.id).eq('produto_id', item.produto_id)
+          await supabase.from('produto_filial').update({
+            estoque_atual: Math.max(0, Number(pf.estoque_atual) - item.quantidade),
+            updated_at: new Date().toISOString(),
+          }).eq('filial_id', filialSel.id).eq('produto_id', item.produto_id)
         }
       }
       const cx = caixaAberto
@@ -239,13 +263,101 @@ export default function PDVPage() {
       await supabase.from('caixas_pdv').update(novo).eq('id', cx.id)
       setCaixaAberto({ ...cx, ...novo })
     }
-
     setVendaConcluida({ ...venda, troco: trocoFinal })
     setCarrinho([]); setDesconto(''); setClienteNome('')
     setValDinheiro(''); setValPix(''); setValCartao('')
     setModalPagMisto(false); setSalvando(false)
   }
 
+  // ── Cancelamento de venda ──
+  async function cancelarVenda() {
+    if (!vendaCancelar || !motivoCancelamento.trim()) return
+    setCancelando(true)
+    await supabase.from('vendas_pdv').update({
+      status: 'cancelada',
+      motivo_cancelamento: motivoCancelamento,
+      cancelado_em: new Date().toISOString(),
+    }).eq('id', vendaCancelar.id)
+    // Estornar estoque
+    if (vendaCancelar.venda_pdv_itens) {
+      for (const item of vendaCancelar.venda_pdv_itens) {
+        const { data: pf } = await supabase.from('produto_filial')
+          .select('estoque_atual').eq('filial_id', filialSel.id).eq('produto_id', item.produto_id).maybeSingle()
+        if (pf) {
+          await supabase.from('produto_filial').update({
+            estoque_atual: Number(pf.estoque_atual) + item.quantidade,
+            updated_at: new Date().toISOString(),
+          }).eq('filial_id', filialSel.id).eq('produto_id', item.produto_id)
+        }
+      }
+    }
+    // Estornar totais do caixa
+    const cx = caixaAberto
+    await supabase.from('caixas_pdv').update({
+      total_vendas:   Math.max(0, (cx.total_vendas   || 0) - Number(vendaCancelar.total)),
+      total_dinheiro: Math.max(0, (cx.total_dinheiro || 0) - Number(vendaCancelar.valor_dinheiro || 0)),
+      total_pix:      Math.max(0, (cx.total_pix      || 0) - Number(vendaCancelar.valor_pix || 0)),
+      total_cartao:   Math.max(0, (cx.total_cartao   || 0) - Number(vendaCancelar.valor_cartao || 0)),
+    }).eq('id', cx.id)
+    setCancelando(false); setModalCancelamento(false); setModalHistorico(false)
+    setMotivoCancelamento(''); setVendaCancelar(null)
+    carregarVendasHoje()
+  }
+
+  // ── Sangria / Suprimento ──
+  async function salvarMovimentacao() {
+    if (!valorMovimentacao || !motivoMovimentacao.trim()) return
+    setSalvandoMov(true)
+    const valor = Number(valorMovimentacao)
+    await supabase.from('caixa_movimentacoes').insert({
+      caixa_id:    caixaAberto.id,
+      filial_id:   filialSel.id,
+      atendente_id: atendente.id,
+      tipo:        tipoMovimentacao,
+      valor,
+      motivo:      motivoMovimentacao,
+    })
+    const cx = caixaAberto
+    const campo = tipoMovimentacao === 'sangria' ? 'total_sangria' : 'total_suprimento'
+    const novoValor = (cx[campo] || 0) + valor
+    await supabase.from('caixas_pdv').update({ [campo]: novoValor }).eq('id', cx.id)
+    setCaixaAberto({ ...cx, [campo]: novoValor })
+    setSalvandoMov(false); setModalMovimentacao(false)
+    setValorMovimentacao(''); setMotivoMovimentacao('')
+  }
+
+  // ── Reimprimir cupom ──
+  function imprimirCupom(venda: any) {
+    const itens = (venda.venda_pdv_itens || []).map((i: any) =>
+      `${i.quantidade}x ${i.nome_produto} .............. ${formatBRL(i.preco_unitario * i.quantidade)}`
+    ).join('\n')
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+    <style>body{font-family:monospace;font-size:12px;width:280px;margin:0 auto}
+    hr{border:1px dashed #000}.right{text-align:right}.center{text-align:center}
+    .bold{font-weight:bold}.big{font-size:16px}</style></head><body>
+    <div class="center bold">🍕 BENDITO LANCHES</div>
+    <div class="center">${filialSel?.nome}</div>
+    <hr/>
+    <div>Venda #${venda.numero}</div>
+    <div>${new Date(venda.created_at).toLocaleString('pt-BR')}</div>
+    <div>Atendente: ${atendente?.nome}</div>
+    ${venda.cliente_nome ? `<div>Cliente: ${venda.cliente_nome}</div>` : ''}
+    <hr/>
+    <pre>${itens}</pre>
+    <hr/>
+    <div class="right">Subtotal: ${formatBRL(venda.subtotal)}</div>
+    ${Number(venda.desconto) > 0 ? `<div class="right">Desconto: -${formatBRL(venda.desconto)}</div>` : ''}
+    <div class="right bold big">TOTAL: ${formatBRL(venda.total)}</div>
+    <div class="right">Forma: ${venda.forma_pagamento}</div>
+    ${Number(venda.troco) > 0 ? `<div class="right">Troco: ${formatBRL(venda.troco)}</div>` : ''}
+    <hr/>
+    <div class="center">Obrigado pela preferência! 🙏</div>
+    </body></html>`
+    const w = window.open('', '_blank', 'width=350,height=600')
+    if (w) { w.document.write(html); w.document.close(); w.print() }
+  }
+
+  // Pedido interno
   function addProdutoPed(p: any) {
     setItensPed(prev => {
       const ex = prev.find(i => i.produto_id === p.id)
@@ -291,7 +403,7 @@ export default function PDVPage() {
 
   const prodFiltrados = produtos.filter(p => p.nome.toLowerCase().includes(busca.toLowerCase()))
 
-  // ════ SELEÇÃO DE FILIAL ════
+  // ════ TELA FILIAL ════
   if (fase === 'filial') return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
       <div className="bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-sm border border-gray-700">
@@ -315,7 +427,7 @@ export default function PDVPage() {
     </div>
   )
 
-  // ════ LOGIN ════
+  // ════ TELA LOGIN ════
   if (fase === 'login') return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
       <div className="bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-sm border border-gray-700">
@@ -341,8 +453,7 @@ export default function PDVPage() {
             <label className="text-xs text-gray-400 mb-1 block">Senha PDV</label>
             <div className="relative">
               <Input type={showSenha ? 'text' : 'password'} value={senhaInput}
-                onChange={e => setSenhaInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && fazerLogin()} placeholder="••••"/>
+                onChange={e => setSenhaInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && fazerLogin()} placeholder="••••"/>
               <button onClick={() => setShowSenha(!showSenha)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
                 {showSenha ? <EyeOff size={16}/> : <Eye size={16}/>}
               </button>
@@ -363,14 +474,12 @@ export default function PDVPage() {
           <Lock size={40} className="text-yellow-400 mx-auto mb-3"/>
           <h2 className="text-xl font-bold text-white">Primeiro Acesso</h2>
           <p className="text-yellow-400 font-semibold mt-1">{atendente?.nome}</p>
-          <p className="text-gray-400 text-xs mt-2">Defina sua senha pessoal para continuar.</p>
         </div>
         <div className="space-y-4">
           <div>
-            <label className="text-xs text-gray-400 mb-1 block">Nova senha (mínimo 4 caracteres)</label>
+            <label className="text-xs text-gray-400 mb-1 block">Nova senha</label>
             <div className="relative">
-              <Input type={showNovaSenha ? 'text' : 'password'} value={novaSenha}
-                onChange={e => setNovaSenha(e.target.value)} placeholder="Digite sua nova senha"/>
+              <Input type={showNovaSenha ? 'text' : 'password'} value={novaSenha} onChange={e => setNovaSenha(e.target.value)} placeholder="Mínimo 4 caracteres"/>
               <button onClick={() => setShowNovaSenha(!showNovaSenha)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
                 {showNovaSenha ? <EyeOff size={16}/> : <Eye size={16}/>}
               </button>
@@ -383,7 +492,7 @@ export default function PDVPage() {
           {erroSenha && <p className="text-xs text-red-400 bg-red-900/30 p-2 rounded">{erroSenha}</p>}
           <Btn onClick={trocarSenha} disabled={salvandoSenha || !novaSenha || !confirmaSenha}
             className="w-full bg-yellow-400 hover:bg-yellow-300 text-gray-900 py-3">
-            {salvandoSenha ? 'Salvando...' : '✅ Definir senha e continuar'}
+            {salvandoSenha ? 'Salvando...' : '✅ Definir senha'}
           </Btn>
         </div>
       </div>
@@ -423,13 +532,30 @@ export default function PDVPage() {
           <span className="text-xs bg-gray-700 px-2 py-0.5 rounded-full text-gray-300 flex items-center gap-1"><User size={11}/> {atendente?.nome}</span>
           {alertas.length > 0 && (
             <span className="text-xs bg-red-600 px-2 py-0.5 rounded-full font-bold flex items-center gap-1 animate-pulse">
-              <AlertTriangle size={10}/> {alertas.length} alerta(s)
+              <AlertTriangle size={10}/> {alertas.length}
             </span>
           )}
         </div>
-        <Btn onClick={() => setModalFechamento(true)} className="bg-red-700 hover:bg-red-600 text-white text-xs px-3 py-1.5 flex items-center gap-1">
-          <LogOut size={13}/> Fechar Caixa
-        </Btn>
+        <div className="flex items-center gap-2">
+          {/* Sangria / Suprimento */}
+          <Btn onClick={() => { setTipoMovimentacao('sangria'); setModalMovimentacao(true) }}
+            className="bg-orange-700 hover:bg-orange-600 text-white text-xs px-2 py-1.5 flex items-center gap-1">
+            <ArrowDownCircle size={13}/> Sangria
+          </Btn>
+          <Btn onClick={() => { setTipoMovimentacao('suprimento'); setModalMovimentacao(true) }}
+            className="bg-blue-700 hover:bg-blue-600 text-white text-xs px-2 py-1.5 flex items-center gap-1">
+            <ArrowUpCircle size={13}/> Suprimento
+          </Btn>
+          {/* Histórico */}
+          <Btn onClick={() => { setModalHistorico(true); carregarVendasHoje() }}
+            className="bg-gray-700 hover:bg-gray-600 text-white text-xs px-2 py-1.5 flex items-center gap-1">
+            <History size={13}/> Histórico
+          </Btn>
+          <Btn onClick={() => setModalFechamento(true)}
+            className="bg-red-700 hover:bg-red-600 text-white text-xs px-3 py-1.5 flex items-center gap-1">
+            <LogOut size={13}/> Fechar
+          </Btn>
+        </div>
       </div>
 
       {/* Abas */}
@@ -450,7 +576,6 @@ export default function PDVPage() {
       {/* ── ABA CAIXA ── */}
       {aba === 'caixa' && (
         <div className="flex flex-1 overflow-hidden">
-          {/* Produtos */}
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="p-3 border-b border-gray-700 flex items-center gap-2 bg-gray-800">
               <Search size={15} className="text-gray-400 shrink-0"/>
@@ -469,7 +594,7 @@ export default function PDVPage() {
                 ))}
                 {prodFiltrados.length === 0 && (
                   <p className="col-span-full text-center text-gray-500 text-sm py-8">
-                    {produtos.length === 0 ? 'Nenhum produto disponível nesta unidade.' : 'Nenhum produto encontrado.'}
+                    {produtos.length === 0 ? 'Nenhum produto disponível.' : 'Nenhum produto encontrado.'}
                   </p>
                 )}
               </div>
@@ -486,8 +611,7 @@ export default function PDVPage() {
               )}
             </div>
             <div className="px-3 pt-2">
-              <input value={clienteNome} onChange={e => setClienteNome(e.target.value)}
-                placeholder="👤 Cliente (opcional)"
+              <input value={clienteNome} onChange={e => setClienteNome(e.target.value)} placeholder="👤 Cliente (opcional)"
                 className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-xs outline-none"/>
             </div>
             <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -524,7 +648,6 @@ export default function PDVPage() {
                 <span className="text-sm font-bold text-gray-300">TOTAL</span>
                 <span className="text-2xl font-bold text-yellow-400">{formatBRL(total)}</span>
               </div>
-              {/* Pagamento rápido */}
               <div className="grid grid-cols-2 gap-2">
                 <Btn onClick={() => finalizarVenda('dinheiro', total)} disabled={!carrinho.length || salvando}
                   className="bg-green-600 hover:bg-green-500 text-white flex items-center justify-center gap-1.5 py-3">
@@ -560,10 +683,9 @@ export default function PDVPage() {
           </h2>
           {pedidoEnviado && (
             <div className="bg-green-800 border border-green-600 rounded-xl p-4 flex items-center gap-2 text-green-300">
-              <CheckCircle size={20}/> Pedido enviado! A Matriz receberá a solicitação.
+              <CheckCircle size={20}/> Pedido enviado!
             </div>
           )}
-          {/* Produtos da Matriz */}
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
             <p className="text-sm font-semibold text-yellow-400 mb-3">📋 Produtos cadastrados na Matriz</p>
             {produtosPed.length === 0
@@ -600,9 +722,8 @@ export default function PDVPage() {
               )
             }
           </div>
-          {/* Outros */}
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
-            <p className="text-sm font-semibold text-gray-300 mb-3">➕ Outros (produto não cadastrado)</p>
+            <p className="text-sm font-semibold text-gray-300 mb-3">➕ Outros</p>
             <div className="flex gap-2">
               <input value={outroNome} onChange={e => setOutroNome(e.target.value)} placeholder="Descreva o produto..."
                 className="flex-1 bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm outline-none"/>
@@ -613,7 +734,6 @@ export default function PDVPage() {
               <Btn onClick={addOutro} disabled={!outroNome.trim()} className="bg-gray-600 hover:bg-gray-500 text-white px-3">Add</Btn>
             </div>
           </div>
-          {/* Resumo */}
           {itensPed.length > 0 && (
             <div className="bg-gray-800 border border-yellow-500/30 rounded-xl p-4">
               <p className="text-sm font-semibold text-yellow-400 mb-3">🛒 Resumo ({itensPed.length} item(s))</p>
@@ -635,7 +755,7 @@ export default function PDVPage() {
             </div>
           )}
           <textarea value={obsPed} onChange={e => setObsPed(e.target.value)} rows={2}
-            placeholder="Observações (urgência, prazo...)..."
+            placeholder="Observações..."
             className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-3 py-2 text-sm outline-none resize-none"/>
           <Btn onClick={enviarPedidoInterno} disabled={salvandoPed || !itensPed.length}
             className="w-full bg-yellow-400 hover:bg-yellow-300 text-gray-900 py-3 text-base">
@@ -737,10 +857,21 @@ export default function PDVPage() {
                   </div>
                 ))}
               </div>
+              {(resumo.sangria > 0 || resumo.suprimento > 0) && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-orange-900/30 border border-orange-700 rounded-xl p-3 text-center">
+                    <p className="text-xs text-orange-400">🔻 Sangria</p>
+                    <p className="text-base font-bold text-orange-300 mt-1">{formatBRL(resumo.sangria)}</p>
+                  </div>
+                  <div className="bg-blue-900/30 border border-blue-700 rounded-xl p-3 text-center">
+                    <p className="text-xs text-blue-400">🔺 Suprimento</p>
+                    <p className="text-base font-bold text-blue-300 mt-1">{formatBRL(resumo.suprimento)}</p>
+                  </div>
+                </div>
+              )}
               <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 text-xs text-gray-400 space-y-1">
                 <p>Unidade: <span className="text-yellow-400 font-medium">{filialSel?.nome}</span></p>
                 <p>Atendente: <span className="text-white font-medium">{atendente?.nome}</span></p>
-                <p>Abertura: <span className="text-white">{caixaAberto?.abertura_at ? new Date(caixaAberto.abertura_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '-'}</span></p>
                 <p>Fundo: <span className="text-white">{formatBRL(caixaAberto?.valor_abertura||0)}</span></p>
               </div>
               <Btn onClick={() => setModalFechamento(true)} className="w-full bg-red-700 hover:bg-red-600 text-white py-3">Fechar Caixa</Btn>
@@ -749,12 +880,12 @@ export default function PDVPage() {
         </div>
       )}
 
-      {/* Modal Misto/Troco */}
+      {/* ── Modal Pagamento Misto / Troco ── */}
       {modalPagMisto && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-sm p-6 space-y-4">
             <div className="flex justify-between items-center">
-              <h3 className="text-lg font-bold text-white">Pagamento Misto</h3>
+              <h3 className="text-lg font-bold text-white">Pagamento</h3>
               <button onClick={() => setModalPagMisto(false)}><X size={20} className="text-gray-400"/></button>
             </div>
             <div className="bg-gray-700 rounded-xl p-4 text-center">
@@ -786,7 +917,7 @@ export default function PDVPage() {
         </div>
       )}
 
-      {/* Modal venda concluída */}
+      {/* ── Modal Venda Concluída ── */}
       {vendaConcluida && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-gray-800 border border-green-600 rounded-2xl w-full max-w-xs p-6 text-center space-y-3">
@@ -794,14 +925,129 @@ export default function PDVPage() {
             <h3 className="text-xl font-bold text-white">Venda #{vendaConcluida.numero}</h3>
             <p className="text-4xl font-bold text-yellow-400">{formatBRL(vendaConcluida.total)}</p>
             {vendaConcluida.troco > 0 && <p className="text-2xl font-bold text-green-400">Troco: {formatBRL(vendaConcluida.troco)}</p>}
-            <Btn onClick={() => setVendaConcluida(null)} className="w-full bg-yellow-400 hover:bg-yellow-300 text-gray-900 py-3 text-base mt-2">
-              ➕ Nova Venda
-            </Btn>
+            <div className="flex gap-2 mt-2">
+              <Btn onClick={() => imprimirCupom(vendaConcluida)}
+                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-center gap-2">
+                <Printer size={16}/> Cupom
+              </Btn>
+              <Btn onClick={() => setVendaConcluida(null)}
+                className="flex-1 bg-yellow-400 hover:bg-yellow-300 text-gray-900">
+                ➕ Nova
+              </Btn>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Modal fechar caixa */}
+      {/* ── Modal Histórico de Vendas ── */}
+      {modalHistorico && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-lg p-6 space-y-4 max-h-[85vh] flex flex-col">
+            <div className="flex justify-between items-center shrink-0">
+              <h3 className="text-lg font-bold text-white">📋 Vendas do Caixa</h3>
+              <button onClick={() => setModalHistorico(false)}><X size={20} className="text-gray-400"/></button>
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-2">
+              {loadingVendas ? (
+                <p className="text-center text-gray-400 py-4">Carregando...</p>
+              ) : vendasHoje.length === 0 ? (
+                <p className="text-center text-gray-500 py-4">Nenhuma venda registrada.</p>
+              ) : vendasHoje.map(v => (
+                <div key={v.id} className={`bg-gray-700 rounded-xl p-3 ${v.status === 'cancelada' ? 'opacity-50' : ''}`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-bold text-white flex items-center gap-2">
+                        #{v.numero}
+                        {v.status === 'cancelada' && <span className="text-xs bg-red-800 text-red-300 px-2 py-0.5 rounded">cancelada</span>}
+                      </p>
+                      <p className="text-xs text-gray-400">{v.forma_pagamento} · {new Date(v.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</p>
+                      {v.cliente_nome && <p className="text-xs text-gray-400">{v.cliente_nome}</p>}
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-yellow-400">{formatBRL(v.total)}</p>
+                      <div className="flex gap-1 mt-1">
+                        <button onClick={() => imprimirCupom(v)}
+                          className="p-1.5 bg-gray-600 hover:bg-gray-500 rounded text-gray-300">
+                          <Printer size={13}/>
+                        </button>
+                        {v.status !== 'cancelada' && (
+                          <button onClick={() => { setVendaCancelar(v); setModalCancelamento(true) }}
+                            className="p-1.5 bg-red-800 hover:bg-red-700 rounded text-red-300">
+                            <X size={13}/>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal Cancelamento ── */}
+      {modalCancelamento && vendaCancelar && (
+        <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
+          <div className="bg-gray-800 border border-red-700 rounded-2xl w-full max-w-sm p-6 space-y-4">
+            <h3 className="text-lg font-bold text-white">❌ Cancelar Venda #{vendaCancelar.numero}</h3>
+            <div className="bg-gray-700 rounded-xl p-3 text-sm">
+              <p className="text-gray-400">Valor: <span className="font-bold text-white">{formatBRL(vendaCancelar.total)}</span></p>
+              <p className="text-gray-400">Forma: <span className="text-white">{vendaCancelar.forma_pagamento}</span></p>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 mb-1 block">Motivo do cancelamento <span className="text-red-400">*</span></label>
+              <textarea value={motivoCancelamento} onChange={e => setMotivoCancelamento(e.target.value)} rows={3}
+                placeholder="Informe o motivo do cancelamento..."
+                className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm outline-none resize-none focus:ring-2 focus:ring-red-500"/>
+            </div>
+            <div className="flex gap-3">
+              <Btn onClick={() => { setModalCancelamento(false); setMotivoCancelamento('') }}
+                className="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300">Voltar</Btn>
+              <Btn onClick={cancelarVenda} disabled={cancelando || !motivoCancelamento.trim()}
+                className="flex-1 bg-red-600 hover:bg-red-500 text-white">
+                {cancelando ? 'Cancelando...' : 'Confirmar'}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal Sangria / Suprimento ── */}
+      {modalMovimentacao && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-bold text-white">
+                {tipoMovimentacao === 'sangria' ? '🔻 Sangria de Caixa' : '🔺 Suprimento de Caixa'}
+              </h3>
+              <button onClick={() => setModalMovimentacao(false)}><X size={20} className="text-gray-400"/></button>
+            </div>
+            <div className={`rounded-xl p-3 text-xs ${tipoMovimentacao === 'sangria' ? 'bg-orange-900/30 border border-orange-700 text-orange-300' : 'bg-blue-900/30 border border-blue-700 text-blue-300'}`}>
+              {tipoMovimentacao === 'sangria'
+                ? '💡 Sangria: retirada de dinheiro do caixa (ex: depósito bancário, segurança)'
+                : '💡 Suprimento: adição de dinheiro ao caixa (ex: troco adicional)'}
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 mb-1 block">Valor R$</label>
+              <Input type="number" step="0.01" value={valorMovimentacao} onChange={e => setValorMovimentacao(e.target.value)} placeholder="0,00"/>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 mb-1 block">Motivo <span className="text-red-400">*</span></label>
+              <Input value={motivoMovimentacao} onChange={e => setMotivoMovimentacao(e.target.value)} placeholder="Ex: Depósito bancário, Troco adicional..."/>
+            </div>
+            <div className="flex gap-3">
+              <Btn onClick={() => setModalMovimentacao(false)} className="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300">Cancelar</Btn>
+              <Btn onClick={salvarMovimentacao} disabled={salvandoMov || !valorMovimentacao || !motivoMovimentacao.trim()}
+                className={`flex-1 text-white ${tipoMovimentacao === 'sangria' ? 'bg-orange-600 hover:bg-orange-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
+                {salvandoMov ? 'Salvando...' : 'Confirmar'}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal Fechar Caixa ── */}
       {modalFechamento && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-sm p-6 space-y-4">
@@ -811,6 +1057,19 @@ export default function PDVPage() {
               <div className="flex justify-between"><span className="text-gray-400">Dinheiro</span><span className="text-green-400">{formatBRL(caixaAberto?.total_dinheiro||0)}</span></div>
               <div className="flex justify-between"><span className="text-gray-400">PIX</span><span className="text-blue-400">{formatBRL(caixaAberto?.total_pix||0)}</span></div>
               <div className="flex justify-between"><span className="text-gray-400">Cartão</span><span className="text-purple-400">{formatBRL(caixaAberto?.total_cartao||0)}</span></div>
+              {caixaAberto?.total_sangria > 0 && <div className="flex justify-between"><span className="text-gray-400">Sangria</span><span className="text-orange-400">-{formatBRL(caixaAberto?.total_sangria||0)}</span></div>}
+              {caixaAberto?.total_suprimento > 0 && <div className="flex justify-between"><span className="text-gray-400">Suprimento</span><span className="text-blue-400">+{formatBRL(caixaAberto?.total_suprimento||0)}</span></div>}
+              <div className="flex justify-between border-t border-gray-600 pt-2 font-bold">
+                <span className="text-gray-300">Saldo final caixa</span>
+                <span className="text-white">
+                  {formatBRL(
+                    (caixaAberto?.valor_abertura||0) +
+                    (caixaAberto?.total_dinheiro||0) -
+                    (caixaAberto?.total_sangria||0) +
+                    (caixaAberto?.total_suprimento||0)
+                  )}
+                </span>
+              </div>
             </div>
             <div className="flex gap-3">
               <Btn onClick={() => setModalFechamento(false)} className="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300">Cancelar</Btn>
