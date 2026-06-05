@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Users, ShoppingCart, DollarSign, CalendarDays, TrendingUp,
   Clock, Repeat, Star, Store, Package, BarChart2, Settings, Utensils,
   Truck, Calculator, Brain, Wallet, TrendingDown, Bell, UserCog,
-  MessageCircle, LucideIcon,
+  MessageCircle, ShoppingBag, LucideIcon,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -44,6 +44,8 @@ const MENUS_ADMIN: MenuItem[] = [
   { icon: Utensils,        label: 'Produção',      href: '/dashboard/producao' },
   { icon: Truck,           label: 'Entregas',      href: '/dashboard/entregas/agenda' },
   { icon: BarChart2,       label: 'Estoque',       href: '/dashboard/estoque' },
+  { icon: Package,         label: 'Lotes/Validades', href: '/dashboard/lotes' },
+  { icon: ShoppingBag,     label: 'Compras Auto',  href: '/dashboard/compras' },
   { icon: Calculator,      label: 'Precificação',  href: '/dashboard/precificacao' },
   { icon: TrendingDown,    label: 'Despesas',      href: '/dashboard/despesas' },
   { icon: Wallet,          label: 'Financeiro',    href: '/dashboard/financeiro' },
