@@ -1,12 +1,18 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { createClient } from '@/lib/supabase/client'
 import { formatBRL, formatData } from '@/lib/constants'
-import { PageHeader, Loading, EmptyState, Field, Input, Textarea, PrimaryButton, SecondaryButton } from '@/components/ui'
+import { ContaPagarSchema, type ContaPagarInput } from '@/schemas'
+import { PageHeader, Loading, EmptyState } from '@/components/ui'
 import Modal from '@/components/Modal'
 import Link from 'next/link'
-import { Plus, Edit, Trash2, Check, Filter, ArrowLeft, AlertTriangle, RefreshCw } from 'lucide-react'
+import {
+  Plus, Edit, Trash2, Check, Filter,
+  ArrowLeft, AlertTriangle, RefreshCw,
+} from 'lucide-react'
 
 const CATEGORIAS = ['aluguel','folha','fornecedor','impostos','utilities','manutencao','marketing','outros']
 const STATUS_COR: Record<string,string> = {
@@ -16,24 +22,47 @@ const STATUS_COR: Record<string,string> = {
   cancelada: 'bg-gray-100 text-gray-500',
 }
 
+function FieldError({ msg }: { msg?: string }) {
+  if (!msg) return null
+  return <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertTriangle size={10}/>{msg}</p>
+}
+
 export default function ContasPagarPage() {
   const supabase = createClient()
-  const [loading, setLoading] = useState(true)
-  const [contas, setContas] = useState<any[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [contas, setContas]         = useState<any[]>([])
   const [fornecedores, setFornecedores] = useState<any[]>([])
-  const [filiais, setFiliais] = useState<any[]>([])
-  const [isAdmin, setIsAdmin] = useState(false)
-  const [filialAtual, setFilialAtual] = useState('')
+  const [filiais, setFiliais]       = useState<any[]>([])
+  const [isAdmin, setIsAdmin]       = useState(false)
+  const [filialAtual, setFilialAtual] = useState('todas')
   const [filtroStatus, setFiltroStatus] = useState('aberta')
-  const [filtroMes, setFiltroMes] = useState(new Date().toISOString().slice(0,7))
-  const [modalOpen, setModalOpen] = useState(false)
-  const [editando, setEditando] = useState<any>(null)
-  const [salvando, setSalvando] = useState(false)
-  const [form, setForm] = useState<any>({
-    filial_id:'', fornecedor_id:'', descricao:'', categoria:'outros',
-    tipo:'unica', valor_total:'', num_parcelas:1, vencimento:'',
-    forma_pagamento:'', observacoes:'', recorrencia_dia:'',
+  const [filtroMes, setFiltroMes]   = useState(new Date().toISOString().slice(0,7))
+  const [modalOpen, setModalOpen]   = useState(false)
+  const [editando, setEditando]     = useState<any>(null)
+  const [salvando, setSalvando]     = useState(false)
+
+  // React Hook Form + Zod
+  const {
+    register,
+    handleSubmit,
+    watch,
+    reset,
+    setValue,
+    formState: { errors },
+  } = useForm<ContaPagarInput>({
+    resolver: zodResolver(ContaPagarSchema),
+    defaultValues: {
+      tipo:          'unica',
+      categoria:     'outros',
+      num_parcelas:  1,
+      origem:        '0',
+      vencimento:    new Date().toISOString().split('T')[0],
+    },
   })
+
+  const tipoWatch        = watch('tipo')
+  const numParcelasWatch = watch('num_parcelas')
+  const valorTotalWatch  = watch('valor_total')
 
   async function load() {
     setLoading(true)
@@ -42,17 +71,13 @@ export default function ContasPagarPage() {
     const { data: profile } = await supabase.from('profiles').select('papel, filial_id').eq('id', user!.id).maybeSingle()
     const admin = ['admin','matriz'].includes(profile?.papel || '')
     setIsAdmin(admin)
-    const fid = profile?.filial_id || ''
-    if (!filialAtual) setFilialAtual(admin ? 'todas' : fid)
+    if (!admin && filialAtual === 'todas') setFilialAtual(profile?.filial_id || '')
 
     let query = supabase.from('contas_pagar')
       .select('*, fornecedores(nome), filiais(nome)')
       .order('vencimento')
-
     if (filtroStatus !== 'todas') query = query.eq('status', filtroStatus)
-    if (filtroMes) {
-      query = query.gte('vencimento', `${filtroMes}-01`).lte('vencimento', `${filtroMes}-31`)
-    }
+    if (filtroMes) query = query.gte('vencimento', `${filtroMes}-01`).lte('vencimento', `${filtroMes}-31`)
     if (filialAtual && filialAtual !== 'todas') query = query.eq('filial_id', filialAtual)
 
     const [conts, forns, fils] = await Promise.all([
@@ -69,87 +94,91 @@ export default function ContasPagarPage() {
 
   function abrirNovo() {
     setEditando(null)
-    setForm({
-      filial_id: filialAtual === 'todas' ? (filiais[0]?.id||'') : filialAtual,
-      fornecedor_id:'', descricao:'', categoria:'outros',
-      tipo:'unica', valor_total:'', num_parcelas:1,
-      vencimento: new Date().toISOString().split('T')[0],
-      forma_pagamento:'', observacoes:'', recorrencia_dia:'',
+    reset({
+      filial_id:       filialAtual === 'todas' ? (filiais[0]?.id || '') : filialAtual,
+      fornecedor_id:   undefined,
+      descricao:       '',
+      categoria:       'outros',
+      tipo:            'unica',
+      valor_total:     0,
+      num_parcelas:    1,
+      vencimento:      new Date().toISOString().split('T')[0],
+      forma_pagamento: undefined,
+      observacoes:     undefined,
     })
     setModalOpen(true)
   }
 
   function abrirEdicao(c: any) {
     setEditando(c)
-    setForm({
-      filial_id: c.filial_id, fornecedor_id: c.fornecedor_id||'',
-      descricao: c.descricao, categoria: c.categoria||'outros',
-      tipo: c.tipo, valor_total: String(c.valor_total),
-      num_parcelas: c.num_parcelas, vencimento: c.vencimento,
-      forma_pagamento: c.forma_pagamento||'', observacoes: c.observacoes||'',
-      recorrencia_dia: c.recorrencia_dia||'',
+    reset({
+      filial_id:       c.filial_id,
+      fornecedor_id:   c.fornecedor_id || undefined,
+      descricao:       c.descricao,
+      categoria:       c.categoria || 'outros',
+      tipo:            c.tipo,
+      valor_total:     Number(c.valor_total),
+      num_parcelas:    c.num_parcelas,
+      vencimento:      c.vencimento,
+      forma_pagamento: c.forma_pagamento || undefined,
+      observacoes:     c.observacoes || undefined,
     })
     setModalOpen(true)
   }
 
-  async function salvar() {
-    if (!form.descricao || !form.valor_total || !form.vencimento) return
+  async function onSubmit(data: ContaPagarInput) {
     setSalvando(true)
-    const valorTotal = Number(form.valor_total)
-    const numParcelas = form.tipo === 'parcelada' ? Number(form.num_parcelas) : 1
-    const valorParcela = valorTotal / numParcelas
+    const valorParcela = data.valor_total / (data.num_parcelas || 1)
 
     if (editando) {
       await supabase.from('contas_pagar').update({
-        ...form, valor_total: valorTotal,
-        num_parcelas: numParcelas, valor_parcela: valorParcela,
-        fornecedor_id: form.fornecedor_id || null,
-        recorrencia_dia: form.recorrencia_dia ? Number(form.recorrencia_dia) : null,
+        ...data,
+        valor_parcela: valorParcela,
+        fornecedor_id: data.fornecedor_id || null,
         updated_at: new Date().toISOString(),
       }).eq('id', editando.id)
     } else {
-      // Criar parcelas se parcelado
-      if (form.tipo === 'parcelada' && numParcelas > 1) {
+      if (data.tipo === 'parcelada' && (data.num_parcelas || 1) > 1) {
         const { data: pai } = await supabase.from('contas_pagar').insert({
-          ...form, valor_total: valorTotal, num_parcelas: numParcelas,
-          valor_parcela: valorParcela, parcela_atual: 1,
-          fornecedor_id: form.fornecedor_id || null,
+          ...data,
+          valor_parcela: valorParcela,
+          parcela_atual: 1,
+          fornecedor_id: data.fornecedor_id || null,
+          descricao: `${data.descricao} (1/${data.num_parcelas})`,
         }).select('id').single()
 
         if (pai) {
-          const parcelas = Array.from({length: numParcelas - 1}, (_, i) => {
-            const dt = new Date(form.vencimento)
+          const parcelas = Array.from({ length: (data.num_parcelas || 1) - 1 }, (_, i) => {
+            const dt = new Date(data.vencimento)
             dt.setMonth(dt.getMonth() + i + 1)
             return {
-              filial_id: form.filial_id,
-              fornecedor_id: form.fornecedor_id || null,
-              descricao: `${form.descricao} (${i+2}/${numParcelas})`,
-              categoria: form.categoria,
-              tipo: 'parcelada',
-              valor_total: valorTotal,
-              num_parcelas: numParcelas,
+              filial_id:     data.filial_id,
+              fornecedor_id: data.fornecedor_id || null,
+              descricao:     `${data.descricao} (${i+2}/${data.num_parcelas})`,
+              categoria:     data.categoria,
+              tipo:          'parcelada' as const,
+              valor_total:   data.valor_total,
+              num_parcelas:  data.num_parcelas,
               parcela_atual: i + 2,
               valor_parcela: valorParcela,
-              vencimento: dt.toISOString().split('T')[0],
-              conta_pai_id: pai.id,
+              vencimento:    dt.toISOString().split('T')[0],
+              conta_pai_id:  pai.id,
             }
           })
           await supabase.from('contas_pagar').insert(parcelas)
-          // Atualizar descrição da primeira
-          await supabase.from('contas_pagar').update({
-            descricao: `${form.descricao} (1/${numParcelas})`,
-          }).eq('id', pai.id)
         }
       } else {
         await supabase.from('contas_pagar').insert({
-          ...form, valor_total: valorTotal,
-          num_parcelas: 1, valor_parcela: valorTotal,
-          fornecedor_id: form.fornecedor_id || null,
-          recorrencia_dia: form.tipo === 'recorrente' ? Number(form.recorrencia_dia)||null : null,
+          ...data,
+          valor_parcela: data.valor_total,
+          num_parcelas:  1,
+          fornecedor_id: data.fornecedor_id || null,
         })
       }
     }
-    setSalvando(false); setModalOpen(false); load()
+    setSalvando(false)
+    setModalOpen(false)
+    load()
   }
 
   async function marcarPaga(c: any) {
@@ -167,7 +196,7 @@ export default function ContasPagarPage() {
     load()
   }
 
-  const total = contas.reduce((s, c) => s + Number(c.valor_parcela||0), 0)
+  const total        = contas.reduce((s, c) => s + Number(c.valor_parcela||0), 0)
   const totalVencido = contas.filter(c => c.status === 'vencida').reduce((s, c) => s + Number(c.valor_parcela||0), 0)
 
   if (loading) return <Loading />
@@ -182,9 +211,10 @@ export default function ContasPagarPage() {
 
       <PageHeader title="Contas a Pagar" subtitle="Gerencie fornecedores, parcelas e recorrências"
         action={
-          <PrimaryButton onClick={abrirNovo} className="flex items-center gap-2">
+          <button onClick={abrirNovo}
+            className="flex items-center gap-2 bg-bendito-verde hover:bg-bendito-verde-escuro text-white px-4 py-2 rounded-lg text-sm font-semibold transition">
             <Plus size={16}/> Nova conta
-          </PrimaryButton>
+          </button>
         }
       />
 
@@ -208,7 +238,7 @@ export default function ContasPagarPage() {
             {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
           </select>
         )}
-        <button onClick={load} className="flex items-center gap-1 text-gray-400 hover:text-bendito-verde ml-auto">
+        <button onClick={load} className="ml-auto text-gray-400 hover:text-bendito-verde">
           <RefreshCw size={14}/>
         </button>
       </div>
@@ -229,7 +259,10 @@ export default function ContasPagarPage() {
         </div>
       </div>
 
-      {contas.length === 0 ? <EmptyState message="Nenhuma conta encontrada no período." /> : (
+      {/* Tabela */}
+      {contas.length === 0 ? (
+        <div className="bg-white rounded-xl shadow-md p-8 text-center text-gray-400">Nenhuma conta no período.</div>
+      ) : (
         <div className="bg-white rounded-xl shadow-md overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -277,85 +310,131 @@ export default function ContasPagarPage() {
         </div>
       )}
 
-      {/* Modal */}
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editando ? 'Editar conta' : 'Nova Conta a Pagar'}>
-        <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
+      {/* Modal com validação Zod */}
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)}
+        title={editando ? 'Editar conta' : 'Nova Conta a Pagar'}>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
+
           {isAdmin && (
-            <Field label="Unidade">
-              <select value={form.filial_id} onChange={e => setForm({...form, filial_id: e.target.value})}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Unidade</label>
+              <select {...register('filial_id')}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-bendito-dourado">
                 {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
               </select>
-            </Field>
+              <FieldError msg={errors.filial_id?.message}/>
+            </div>
           )}
-          <Field label="Descrição" required>
-            <Input value={form.descricao} onChange={e => setForm({...form, descricao: e.target.value})} placeholder="Ex: Aluguel novembro, NF fornecedor X..."/>
-          </Field>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Descrição <span className="text-red-500">*</span></label>
+            <input {...register('descricao')} placeholder="Ex: Aluguel novembro, NF fornecedor X..."
+              className={`w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-bendito-dourado ${errors.descricao ? 'border-red-400' : 'border-gray-300'}`}/>
+            <FieldError msg={errors.descricao?.message}/>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Categoria">
-              <select value={form.categoria} onChange={e => setForm({...form, categoria: e.target.value})}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Categoria</label>
+              <select {...register('categoria')}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-bendito-dourado">
                 {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
-            </Field>
-            <Field label="Tipo">
-              <select value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value})}
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Tipo</label>
+              <select {...register('tipo')}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-bendito-dourado">
                 <option value="unica">Parcela única</option>
                 <option value="parcelada">Parcelada</option>
                 <option value="recorrente">Recorrente mensal</option>
               </select>
-            </Field>
+            </div>
           </div>
-          <Field label="Fornecedor (opcional)">
-            <select value={form.fornecedor_id} onChange={e => setForm({...form, fornecedor_id: e.target.value})}
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Fornecedor (opcional)</label>
+            <select {...register('fornecedor_id')}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-bendito-dourado">
               <option value="">Sem fornecedor</option>
               {fornecedores.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
             </select>
-          </Field>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Valor total (R$)" required>
-              <Input type="number" step="0.01" value={form.valor_total} onChange={e => setForm({...form, valor_total: e.target.value})} placeholder="0,00"/>
-            </Field>
-            {form.tipo === 'parcelada' && (
-              <Field label="Nº de parcelas">
-                <Input type="number" min={2} max={60} value={form.num_parcelas} onChange={e => setForm({...form, num_parcelas: e.target.value})}/>
-              </Field>
-            )}
-            {form.tipo === 'recorrente' && (
-              <Field label="Dia do mês">
-                <Input type="number" min={1} max={31} value={form.recorrencia_dia} onChange={e => setForm({...form, recorrencia_dia: e.target.value})} placeholder="Ex: 5"/>
-              </Field>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Valor total (R$) <span className="text-red-500">*</span></label>
+              <input type="number" step="0.01" {...register('valor_total', { valueAsNumber: true })}
+                placeholder="0,00"
+                className={`w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-bendito-dourado ${errors.valor_total ? 'border-red-400' : 'border-gray-300'}`}/>
+              <FieldError msg={errors.valor_total?.message}/>
+            </div>
+            {tipoWatch === 'parcelada' && (
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Nº de parcelas</label>
+                <input type="number" min={2} max={60} {...register('num_parcelas', { valueAsNumber: true })}
+                  className={`w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-bendito-dourado ${errors.num_parcelas ? 'border-red-400' : 'border-gray-300'}`}/>
+                <FieldError msg={errors.num_parcelas?.message}/>
+              </div>
             )}
           </div>
-          {form.tipo === 'parcelada' && form.valor_total && Number(form.num_parcelas) > 1 && (
+
+          {tipoWatch === 'parcelada' && valorTotalWatch > 0 && (numParcelasWatch||1) > 1 && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
-              💡 {form.num_parcelas}x de {formatBRL(Number(form.valor_total) / Number(form.num_parcelas))} · As parcelas serão criadas automaticamente com vencimento mensal.
+              💡 {numParcelasWatch}x de {formatBRL(valorTotalWatch / numParcelasWatch)} · Parcelas geradas automaticamente com vencimento mensal.
             </div>
           )}
+
           <div className="grid grid-cols-2 gap-3">
-            <Field label={form.tipo === 'parcelada' ? '1º Vencimento' : 'Vencimento'} required>
-              <Input type="date" value={form.vencimento} onChange={e => setForm({...form, vencimento: e.target.value})}/>
-            </Field>
-            <Field label="Forma de pagamento">
-              <select value={form.forma_pagamento} onChange={e => setForm({...form, forma_pagamento: e.target.value})}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                {tipoWatch === 'parcelada' ? '1º Vencimento' : 'Vencimento'} <span className="text-red-500">*</span>
+              </label>
+              <input type="date" {...register('vencimento')}
+                className={`w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-bendito-dourado ${errors.vencimento ? 'border-red-400' : 'border-gray-300'}`}/>
+              <FieldError msg={errors.vencimento?.message}/>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Forma de pagamento</label>
+              <select {...register('forma_pagamento')}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-bendito-dourado">
                 <option value="">Não definido</option>
-                {['boleto','pix','transferencia','cheque','dinheiro','cartao'].map(f => <option key={f} value={f}>{f}</option>)}
+                {['boleto','pix','transferencia','cheque','dinheiro','cartao'].map(f =>
+                  <option key={f} value={f}>{f}</option>
+                )}
               </select>
-            </Field>
+            </div>
           </div>
-          <Field label="Observações">
-            <Textarea rows={2} value={form.observacoes} onChange={e => setForm({...form, observacoes: e.target.value})}/>
-          </Field>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Observações</label>
+            <textarea rows={2} {...register('observacoes')}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-bendito-dourado resize-none"/>
+          </div>
+
+          {/* Resumo de erros */}
+          {Object.keys(errors).length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-600">
+              <p className="font-semibold mb-1 flex items-center gap-1"><AlertTriangle size={12}/> Corrija os erros antes de salvar:</p>
+              <ul className="space-y-0.5 list-disc list-inside">
+                {Object.entries(errors).map(([k, v]) => (
+                  <li key={k}>{(v as any)?.message}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className="flex gap-3">
-            <SecondaryButton onClick={() => setModalOpen(false)} className="flex-1">Cancelar</SecondaryButton>
-            <PrimaryButton onClick={salvar} disabled={salvando || !form.descricao || !form.valor_total || !form.vencimento} className="flex-1">
+            <button type="button" onClick={() => setModalOpen(false)}
+              className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 py-2.5 rounded-lg text-sm font-semibold transition">
+              Cancelar
+            </button>
+            <button type="submit" disabled={salvando}
+              className="flex-1 bg-bendito-verde hover:bg-bendito-verde-escuro text-white py-2.5 rounded-lg text-sm font-semibold transition disabled:opacity-50">
               {salvando ? 'Salvando...' : editando ? 'Salvar' : 'Lançar'}
-            </PrimaryButton>
+            </button>
           </div>
-        </div>
+        </form>
       </Modal>
     </div>
   )
