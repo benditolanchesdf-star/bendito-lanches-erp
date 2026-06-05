@@ -55,7 +55,6 @@ export default function ContasPagarPage() {
       tipo:          'unica',
       categoria:     'outros',
       num_parcelas:  1,
-      origem:        '0',
       vencimento:    new Date().toISOString().split('T')[0],
     },
   })
