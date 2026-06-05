@@ -31,6 +31,7 @@ export const ProdutoFiscalSchema = z.object({
   cfop:             z.string().length(4, 'CFOP deve ter 4 dígitos').regex(/^\d{4}$/, 'CFOP inválido'),
   csosn:            z.string().optional().nullable(),
   cst_icms:         z.string().optional().nullable(),
+  cest:             z.string().max(7).optional().nullable(),
   origem:           z.enum(['0','1','2','3','4','5']).default('0'),
   aliquota_icms:    z.number().min(0).max(100).default(0),
   aliquota_pis:     z.number().min(0).max(100).default(0.65),
