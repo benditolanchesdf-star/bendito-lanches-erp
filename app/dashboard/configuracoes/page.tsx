@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { FILIAL_ID } from '@/lib/constants'
 import { Field, Input, PrimaryButton, SecondaryButton, PageHeader, Loading } from '@/components/ui'
-import { Plus, Trash2, Building2, User as UserIcon, Tag, MessageCircle, CheckCircle, XCircle, Users, Shield, ChevronRight, Package } from 'lucide-react'
+import { Plus, Trash2, Building2, User as UserIcon, Tag, MessageCircle, CheckCircle, XCircle, Users, Shield, ChevronRight, Package, FileText } from 'lucide-react'
 import { enviarWhatsApp, carregarConfigZAPI } from '@/lib/zapi'
 
 export default function ConfiguracoesPage() {
@@ -20,6 +20,8 @@ export default function ConfiguracoesPage() {
   const [totalUsuarios, setTotalUsuarios] = useState(0)
   const [totalAtendentes, setTotalAtendentes] = useState(0)
   const [totalFiliais, setTotalFiliais] = useState(0)
+  const [totalProdutosFiscal, setTotalProdutosFiscal] = useState(0)
+  const [totalProdutos, setTotalProdutos] = useState(0)
 
   const [zapConfig, setZapConfig] = useState({
     zapi_instance_id: '', zapi_token: '', zapi_client_token: '', zapi_ativo: 'false',
@@ -35,7 +37,7 @@ export default function ConfiguracoesPage() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     setUser(user)
-    const [f, c, cfgs, logs, totalU, totalA, totalF] = await Promise.all([
+    const [f, c, cfgs, logs, totalU, totalA, totalF, prodFiscal, totalP] = await Promise.all([
       supabase.from('filiais').select('*').eq('id', FILIAL_ID).maybeSingle(),
       supabase.from('categorias').select('*').order('ordem').order('nome'),
       supabase.from('configuracoes').select('chave, valor').eq('filial_id', FILIAL_ID),
@@ -43,6 +45,8 @@ export default function ConfiguracoesPage() {
       supabase.from('profiles').select('id', { count: 'exact', head: true }),
       supabase.from('atendentes_pdv').select('id', { count: 'exact', head: true }).eq('ativo', true),
       supabase.from('filiais').select('id', { count: 'exact', head: true }).eq('ativo', true),
+      supabase.from('produtos').select('id', { count: 'exact', head: true }).eq('ativo', true).not('ncm', 'is', null),
+      supabase.from('produtos').select('id', { count: 'exact', head: true }).eq('ativo', true),
     ])
     setFilial(f.data)
     setFilialForm(f.data || {})
@@ -51,6 +55,8 @@ export default function ConfiguracoesPage() {
     setTotalUsuarios(totalU.count || 0)
     setTotalAtendentes(totalA.count || 0)
     setTotalFiliais(totalF.count || 0)
+    setTotalProdutosFiscal(prodFiscal.count || 0)
+    setTotalProdutos(totalP.count || 0)
     const map: Record<string, string> = {}
     for (const r of cfgs.data || []) map[r.chave] = r.valor || ''
     setZapConfig((prev) => ({ ...prev, ...map }))
@@ -110,19 +116,23 @@ export default function ConfiguracoesPage() {
     load()
   }
 
+  const pctFiscal = totalProdutos > 0 ? Math.round((totalProdutosFiscal / totalProdutos) * 100) : 0
+
   if (loading) return <Loading />
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Configurações" subtitle="Filial, usuários e integrações" />
+      <PageHeader title="Configurações" subtitle="Filial, usuários, fiscal e integrações" />
 
-      {/* Acesso rápido */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Acesso rápido — 6 cards incluindo os 2 novos fiscais */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {[
-          { href: '/dashboard/configuracoes/usuarios',         icon: Shield,   cor: 'bg-purple-100', iconCor: 'text-purple-600', label: 'Gestão de Usuários',    sub: `${totalUsuarios} usuário(s)` },
-          { href: '/dashboard/configuracoes/atendentes',        icon: Users,    cor: 'bg-orange-100', iconCor: 'text-orange-600', label: 'Atendentes PDV',        sub: `${totalAtendentes} atendente(s)` },
-          { href: '/dashboard/configuracoes/filiais',           icon: Building2,cor: 'bg-blue-100',   iconCor: 'text-blue-600',   label: 'Filiais',               sub: `${totalFiliais} unidade(s)` },
-          { href: '/dashboard/configuracoes/produtos-filiais',  icon: Package,  cor: 'bg-green-100',  iconCor: 'text-green-600',  label: 'Produtos por Filial',   sub: 'Preços e estoques' },
+          { href: '/dashboard/configuracoes/usuarios',         icon: Shield,    cor: 'bg-purple-100', iconCor: 'text-purple-600', label: 'Gestão de Usuários',      sub: `${totalUsuarios} usuário(s)` },
+          { href: '/dashboard/configuracoes/atendentes',       icon: Users,     cor: 'bg-orange-100', iconCor: 'text-orange-600', label: 'Atendentes PDV',          sub: `${totalAtendentes} atendente(s)` },
+          { href: '/dashboard/configuracoes/filiais',          icon: Building2, cor: 'bg-blue-100',   iconCor: 'text-blue-600',   label: 'Filiais',                  sub: `${totalFiliais} unidade(s)` },
+          { href: '/dashboard/configuracoes/produtos-filiais', icon: Package,   cor: 'bg-green-100',  iconCor: 'text-green-600',  label: 'Produtos por Filial',      sub: 'Preços e estoques' },
+          { href: '/dashboard/configuracoes/fiscal',           icon: FileText,  cor: 'bg-yellow-100', iconCor: 'text-yellow-600', label: 'Configuração Fiscal',      sub: 'NFC-e, certificado, CSC' },
+          { href: '/dashboard/configuracoes/produtos-fiscal',  icon: FileText,  cor: 'bg-red-100',    iconCor: 'text-red-600',    label: 'Cadastro Fiscal Produtos', sub: `${pctFiscal}% configurados (${totalProdutosFiscal}/${totalProdutos})` },
         ].map(item => {
           const Icon = item.icon
           return (
