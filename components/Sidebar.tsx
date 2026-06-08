@@ -1,34 +1,60 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import SidebarMenu from './SidebarMenu'
-import {
-  LayoutDashboard, ShoppingCart, Package, Users, TrendingUp,
-  DollarSign, BarChart3, Brain, Settings, Factory, Box,
-} from 'lucide-react'
-import { usePedidosPendentes } from '@/lib/hooks/usePedidosPendentes'
+import { createClient } from '@/lib/supabase/client'
 
+/**
+ * Hook local: count de pedidos pendentes em tempo real via Supabase Realtime.
+ * Mantido neste arquivo para evitar dependência de '@/lib/hooks/...'.
+ *
+ * Pré-requisito: tabela 'pedidos' na publication supabase_realtime
+ * (já adicionada pela migration bendito_apontamento_5_whatsapp_notificacao).
+ */
+function usePedidosPendentes() {
+  const [count, setCount] = useState(0)
+
+  useEffect(() => {
+    const supabase = createClient()
+    let mounted = true
+
+    async function fetchCount() {
+      const { count } = await supabase
+        .from('pedidos')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pendente')
+      if (mounted) setCount(count || 0)
+    }
+    fetchCount()
+
+    const channel = supabase
+      .channel('sidebar-pedidos-pendentes-wrapper')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pedidos' },
+        () => fetchCount()
+      )
+      .subscribe()
+
+    return () => {
+      mounted = false
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
+  return count
+}
+
+/**
+ * Wrapper opcional. O SidebarMenu já monta o menu internamente por `tipo`
+ * e já tem a lógica de badge piscante. Este componente só serve se algum
+ * layout antigo ainda importa <Sidebar />.
+ */
 export default function Sidebar() {
-  const { count: pendentes } = usePedidosPendentes()
+  // O hook fica disponível aqui caso queira customizar o subtítulo
+  // ou usar o count em algum indicador adicional do wrapper.
+  const pendentes = usePedidosPendentes()
+  const sub = pendentes > 0 ? `Admin · ${pendentes} pedido(s) pendente(s)` : 'Admin / Matriz'
 
-  const menuAdmin = [
-    { icon: LayoutDashboard, label: 'Dashboard',     href: '/dashboard' },
-    {
-      icon: ShoppingCart,
-      label: 'Pedidos',
-      href: '/dashboard/pedidos',
-      badge: pendentes,
-      badgeVariant: pendentes > 0 ? ('alerta' as const) : undefined,
-    },
-    { icon: Factory,         label: 'Produção',      href: '/dashboard/producao' },
-    { icon: Box,             label: 'Estoque',       href: '/dashboard/estoque' },
-    { icon: Package,         label: 'Produtos',      href: '/dashboard/produtos' },
-    { icon: Users,           label: 'Clientes',      href: '/dashboard/clientes' },
-    { icon: TrendingUp,      label: 'Vendedores',    href: '/dashboard/vendedores' },
-    { icon: DollarSign,      label: 'Financeiro',    href: '/dashboard/financeiro' },
-    { icon: BarChart3,       label: 'Relatórios',    href: '/dashboard/relatorios' },
-    { icon: Brain,           label: 'IA - Previsões', href: '/dashboard/ia' },
-    { icon: Settings,        label: 'Configurações', href: '/dashboard/configuracoes' },
-  ]
-
-  return <SidebarMenu titulo="Bendito Lanches" subtitulo="Admin / Matriz" itens={menuAdmin} />
+  return <SidebarMenu tipo="admin" titulo="Bendito Lanches" subtitulo={sub} />
 }
