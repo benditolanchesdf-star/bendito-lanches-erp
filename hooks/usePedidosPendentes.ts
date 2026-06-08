@@ -5,10 +5,12 @@ import { createClient } from '@/lib/supabase/client'
 
 /**
  * Retorna a quantidade de pedidos com status='pendente' em tempo real.
- * Usa Supabase Realtime — atualiza automaticamente ao detectar INSERT/UPDATE/DELETE em public.pedidos.
  *
- * Para que funcione, a tabela 'pedidos' precisa estar na publication supabase_realtime
- * (já está, após a migration bendito_apontamento_5_whatsapp_notificacao).
+ * Usa Supabase Realtime: atualiza automaticamente ao detectar INSERT/UPDATE/DELETE
+ * na tabela public.pedidos — sem necessidade de polling.
+ *
+ * Pré-requisito: a tabela 'pedidos' deve estar na publication supabase_realtime
+ * (já adicionada pela migration bendito_apontamento_5_whatsapp_notificacao).
  */
 export function usePedidosPendentes() {
   const [count, setCount] = useState(0)
@@ -31,9 +33,8 @@ export function usePedidosPendentes() {
 
     fetchCount()
 
-    // Escuta mudanças em tempo real
     const channel = supabase
-      .channel('pedidos-pendentes')
+      .channel('pedidos-pendentes-hook')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'pedidos' },
