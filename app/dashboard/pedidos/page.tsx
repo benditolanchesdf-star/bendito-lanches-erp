@@ -1,19 +1,20 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Search, Filter, ChevronDown, Clock, CheckCircle2, Truck, XCircle, Package, RefreshCw } from 'lucide-react'
+import Link from 'next/link'
+import { Plus, Search, RefreshCw, Clock, CheckCircle2, Truck, XCircle, Package } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { PageHeader, Loading, EmptyState, StatusBadge, PrimaryButton, SecondaryButton, Field, Input, Select } from '@/components/ui'
+import { PageHeader, Loading, EmptyState, PrimaryButton, SecondaryButton, Field, Input, Select } from '@/components/ui'
 import { Modal } from '@/components/Modal'
 import { FILIAL_ID, formatBRL, formatData } from '@/lib/constants'
 
-// ─── tipos ───────────────────────────────────────────────────
+// ─── tipos ────────────────────────────────────────────────────
 type Status = 'pendente' | 'confirmado' | 'em_producao' | 'pronto' | 'saiu_entrega' | 'entregue' | 'cancelado'
 type TipoEntrega = 'retirada' | 'entrega' | 'consumo_local'
 type Canal = 'balcao' | 'whatsapp' | 'telefone' | 'app' | 'ifood'
 type FormaPagamento = 'dinheiro' | 'cartao_debito' | 'cartao_credito' | 'pix' | 'misto' | 'fiado'
 
-interface Cliente { id: string; nome: string; telefone: string | null; whatsapp: string | null }
+interface Cliente { id: string; nome: string; telefone: string | null }
 interface Pedido {
   id: string
   numero: string
@@ -34,15 +35,15 @@ interface Pedido {
   vendedor: { full_name: string } | null
 }
 
-// ─── helpers de exibição ─────────────────────────────────────
+// ─── helpers ──────────────────────────────────────────────────
 const STATUS_CONFIG: Record<Status, { label: string; color: string; icon: React.ElementType }> = {
-  pendente:      { label: 'Pendente',       color: 'bg-yellow-100 text-yellow-800', icon: Clock },
-  confirmado:    { label: 'Confirmado',     color: 'bg-blue-100 text-blue-800',     icon: CheckCircle2 },
-  em_producao:   { label: 'Em produção',    color: 'bg-purple-100 text-purple-800', icon: Package },
-  pronto:        { label: 'Pronto',         color: 'bg-green-100 text-green-800',   icon: CheckCircle2 },
-  saiu_entrega:  { label: 'Saiu p/ entrega', color: 'bg-orange-100 text-orange-800', icon: Truck },
-  entregue:      { label: 'Entregue',       color: 'bg-gray-100 text-gray-600',     icon: CheckCircle2 },
-  cancelado:     { label: 'Cancelado',      color: 'bg-red-100 text-red-700',       icon: XCircle },
+  pendente:     { label: 'Pendente',        color: 'bg-yellow-100 text-yellow-800', icon: Clock },
+  confirmado:   { label: 'Confirmado',      color: 'bg-blue-100 text-blue-800',     icon: CheckCircle2 },
+  em_producao:  { label: 'Em produção',     color: 'bg-purple-100 text-purple-800', icon: Package },
+  pronto:       { label: 'Pronto',          color: 'bg-green-100 text-green-800',   icon: CheckCircle2 },
+  saiu_entrega: { label: 'Saiu p/ entrega', color: 'bg-orange-100 text-orange-800', icon: Truck },
+  entregue:     { label: 'Entregue',        color: 'bg-gray-100 text-gray-600',     icon: CheckCircle2 },
+  cancelado:    { label: 'Cancelado',       color: 'bg-red-100 text-red-700',       icon: XCircle },
 }
 
 const CANAL_LABEL: Record<string, string> = {
@@ -53,26 +54,30 @@ const ENTREGA_LABEL: Record<string, string> = {
   retirada: 'Retirada', entrega: 'Entrega', consumo_local: 'Local',
 }
 
-// ─── componente principal ────────────────────────────────────
+const PROXIMO_STATUS: Partial<Record<Status, Status>> = {
+  pendente:    'confirmado',
+  confirmado:  'em_producao',
+  em_producao: 'pronto',
+  pronto:      'saiu_entrega',
+  saiu_entrega:'entregue',
+}
+
+// ─── componente ───────────────────────────────────────────────
 export default function PedidosPage() {
   const supabase = createClient()
 
-  // lista
-  const [pedidos, setPedidos]     = useState<Pedido[]>([])
-  const [loading, setLoading]     = useState(true)
+  const [pedidos, setPedidos]       = useState<Pedido[]>([])
+  const [loading, setLoading]       = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-
-  // filtros
-  const [busca, setBusca]         = useState('')
+  const [busca, setBusca]           = useState('')
   const [filtroStatus, setFiltroStatus] = useState<string>('ativos')
   const [filtroCanal, setFiltroCanal]   = useState<string>('')
 
   // modal novo pedido
-  const [modalAberto, setModalAberto]   = useState(false)
-  const [clientes, setClientes]         = useState<Cliente[]>([])
-  const [salvando, setSalvando]         = useState(false)
-  const [erro, setErro]                 = useState('')
-
+  const [modalAberto, setModalAberto] = useState(false)
+  const [clientes, setClientes]       = useState<Cliente[]>([])
+  const [salvando, setSalvando]       = useState(false)
+  const [erro, setErro]               = useState('')
   const [form, setForm] = useState({
     cliente_id:      '',
     tipo_entrega:    'retirada' as TipoEntrega,
@@ -115,7 +120,7 @@ export default function PedidosPage() {
 
   useEffect(() => { buscarPedidos() }, [buscarPedidos])
 
-  // ─── realtime ────────────────────────────────────────────
+  // ─── realtime ─────────────────────────────────────────────
   useEffect(() => {
     const channel = supabase
       .channel('pedidos-realtime')
@@ -126,19 +131,19 @@ export default function PedidosPage() {
     return () => { supabase.removeChannel(channel) }
   }, [buscarPedidos])
 
-  // ─── buscar clientes para o modal ────────────────────────
+  // ─── clientes para modal ──────────────────────────────────
   useEffect(() => {
     if (!modalAberto) return
     supabase
       .from('clientes')
-      .select('id, nome, telefone, whatsapp')
+      .select('id, nome, telefone')
       .eq('filial_id', FILIAL_ID)
       .eq('ativo', true)
       .order('nome')
       .then(({ data }) => { if (data) setClientes(data) })
   }, [modalAberto])
 
-  // ─── filtro local por busca ───────────────────────────────
+  // ─── filtro local ─────────────────────────────────────────
   const pedidosFiltrados = pedidos.filter(p => {
     if (!busca) return true
     const q = busca.toLowerCase()
@@ -149,17 +154,15 @@ export default function PedidosPage() {
     )
   })
 
-  // ─── contadores de status ─────────────────────────────────
   const contadores = pedidos.reduce((acc, p) => {
     acc[p.status] = (acc[p.status] || 0) + 1
     return acc
   }, {} as Record<string, number>)
 
-  // ─── salvar novo pedido ───────────────────────────────────
+  // ─── salvar pedido ────────────────────────────────────────
   async function salvarPedido() {
     setErro('')
     setSalvando(true)
-
     const { error } = await supabase
       .from('pedidos')
       .insert({
@@ -169,9 +172,7 @@ export default function PedidosPage() {
         canal:           form.canal,
         forma_pagamento: form.forma_pagamento,
         observacoes:     form.observacoes || null,
-        subtotal:        0,
-        desconto:        0,
-        taxa_entrega:    0,
+        subtotal: 0, desconto: 0, taxa_entrega: 0,
       })
       .select()
 
@@ -180,7 +181,6 @@ export default function PedidosPage() {
       setSalvando(false)
       return
     }
-
     setModalAberto(false)
     setForm({ cliente_id: '', tipo_entrega: 'retirada', canal: 'balcao', forma_pagamento: 'pix', observacoes: '' })
     buscarPedidos(true)
@@ -189,25 +189,14 @@ export default function PedidosPage() {
 
   // ─── mudar status ─────────────────────────────────────────
   async function mudarStatus(pedidoId: string, novoStatus: Status) {
-    await supabase
-      .from('pedidos')
-      .update({ status: novoStatus, updated_by: (await supabase.auth.getUser()).data.user?.id })
-      .eq('id', pedidoId)
+    await supabase.from('pedidos').update({ status: novoStatus }).eq('id', pedidoId)
     buscarPedidos(true)
-  }
-
-  // ─── próximo status ───────────────────────────────────────
-  const PROXIMO_STATUS: Partial<Record<Status, Status>> = {
-    pendente:    'confirmado',
-    confirmado:  'em_producao',
-    em_producao: 'pronto',
-    pronto:      'saiu_entrega',
-    saiu_entrega:'entregue',
   }
 
   // ─── render ───────────────────────────────────────────────
   return (
     <div className="space-y-6">
+
       {/* Cabeçalho */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <PageHeader
@@ -228,7 +217,7 @@ export default function PedidosPage() {
         </div>
       </div>
 
-      {/* KPIs de status */}
+      {/* KPIs clicáveis */}
       <div className="flex flex-wrap gap-2">
         {(['pendente', 'confirmado', 'em_producao', 'pronto', 'saiu_entrega'] as Status[]).map(s => {
           const cfg = STATUS_CONFIG[s]
@@ -267,7 +256,7 @@ export default function PedidosPage() {
         </button>
       </div>
 
-      {/* Filtros de busca */}
+      {/* Filtros */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
         <div className="flex flex-wrap gap-3">
           <div className="relative flex-1 min-w-48">
@@ -314,11 +303,13 @@ export default function PedidosPage() {
                 className="bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-4 hover:shadow-md transition">
                 <div className="flex items-center gap-4 flex-wrap">
 
-                  {/* Número + data */}
-                  <div className="min-w-32">
-                    <p className="font-bold text-bendito-verde-escuro text-sm">{pedido.numero}</p>
+                  {/* Número + data — clicável para detalhe */}
+                  <Link href={`/dashboard/pedidos/${pedido.id}`} className="min-w-32 group">
+                    <p className="font-bold text-bendito-verde-escuro text-sm group-hover:underline">
+                      {pedido.numero}
+                    </p>
                     <p className="text-xs text-gray-400 mt-0.5">{formatData(pedido.created_at)}</p>
-                  </div>
+                  </Link>
 
                   {/* Cliente + vendedor */}
                   <div className="flex-1 min-w-40">
@@ -346,7 +337,7 @@ export default function PedidosPage() {
                     )}
                   </div>
 
-                  {/* Status badge */}
+                  {/* Status */}
                   <div className="min-w-32 flex justify-end">
                     <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${cfg.color}`}>
                       <Icon size={12} />
@@ -354,7 +345,7 @@ export default function PedidosPage() {
                     </span>
                   </div>
 
-                  {/* Ação de avançar status */}
+                  {/* Avançar status */}
                   {proximo && pedido.status !== 'cancelado' && (
                     <button
                       onClick={() => mudarStatus(pedido.id, proximo)}
@@ -373,7 +364,6 @@ export default function PedidosPage() {
                   )}
                 </div>
 
-                {/* Observação */}
                 {pedido.observacoes && (
                   <p className="mt-2 text-xs text-gray-400 border-t border-gray-50 pt-2 truncate">
                     {pedido.observacoes}
@@ -385,7 +375,7 @@ export default function PedidosPage() {
         </div>
       )}
 
-      {/* ─── Modal: Novo Pedido ─────────────────────────────── */}
+      {/* ─── Modal: Novo Pedido ─── */}
       <Modal isOpen={modalAberto} onClose={() => setModalAberto(false)} title="Novo Pedido">
         <div className="space-y-4">
 
