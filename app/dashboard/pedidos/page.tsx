@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { Plus, Search, RefreshCw, Clock, CheckCircle2, Truck, XCircle, Package } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { PageHeader, Loading, EmptyState, PrimaryButton, SecondaryButton, Field, Input, Select } from '@/components/ui'
-import { Modal } from '@/components/Modal'
+import Modal from '@/components/Modal'
 import { FILIAL_ID, formatBRL, formatData } from '@/lib/constants'
 
 // ─── tipos ────────────────────────────────────────────────────
