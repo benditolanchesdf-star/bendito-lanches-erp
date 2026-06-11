@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Users, ShoppingCart, DollarSign, CalendarDays, TrendingUp,
   Clock, Repeat, Star, Store, Package, BarChart2, Settings, Utensils,
   Truck, Calculator, Brain, Wallet, TrendingDown, Bell, UserCog,
-  MessageCircle, ShoppingBag, LucideIcon,
+  MessageCircle, ShoppingBag, LucideIcon, MonitorSmartphone, AlertTriangle,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -17,7 +17,7 @@ interface MenuItem {
   label: string
   href: string
   badge?: number
-  badgeVariant?: 'alerta' | 'info'   // 'alerta' = amarelo intermitente
+  badgeVariant?: 'alerta' | 'info'
 }
 
 const MENUS_VENDEDOR: MenuItem[] = [
@@ -38,23 +38,24 @@ const MENUS_CLIENTE: MenuItem[] = [
 ]
 
 const MENUS_ADMIN: MenuItem[] = [
-  { icon: LayoutDashboard, label: 'Dashboard',     href: '/dashboard' },
-  { icon: Bell,            label: 'Aprovações',    href: '/dashboard/aprovacoes' },
-  { icon: ShoppingCart,    label: 'Pedidos',       href: '/dashboard/pedidos-index' },
-  { icon: Package,         label: 'Produtos',      href: '/dashboard/produtos' },
-  { icon: Utensils,        label: 'Produção',      href: '/dashboard/producao' },
-  { icon: Truck,           label: 'Entregas',      href: '/dashboard/entregas/agenda' },
-  { icon: BarChart2,       label: 'Estoque',       href: '/dashboard/estoque' },
-  { icon: Package,         label: 'Lotes/Validades', href: '/dashboard/lotes' },
-  { icon: ShoppingBag,     label: 'Compras Auto',  href: '/dashboard/compras' },
-  { icon: Calculator,      label: 'Precificação',  href: '/dashboard/precificacao' },
-  { icon: TrendingDown,    label: 'Despesas',      href: '/dashboard/despesas' },
-  { icon: Wallet,          label: 'Financeiro',    href: '/dashboard/financeiro' },
-  { icon: TrendingUp,      label: 'Relatórios',    href: '/dashboard/relatorios' },
-  { icon: MessageCircle,   label: 'WhatsApp',      href: '/dashboard/whatsapp' },
-  { icon: UserCog,         label: 'Usuários',      href: '/dashboard/usuarios' },
-  { icon: Brain,           label: 'IA',            href: '/dashboard/ia' },
-  { icon: Settings,        label: 'Configurações', href: '/dashboard/configuracoes' },
+  { icon: LayoutDashboard,  label: 'Dashboard',       href: '/dashboard' },
+  { icon: Bell,             label: 'Aprovações',      href: '/dashboard/aprovacoes' },
+  { icon: ShoppingCart,     label: 'Pedidos',         href: '/dashboard/pedidos-index' },
+  { icon: MonitorSmartphone,label: 'PDV',             href: '/dashboard/pdv' },
+  { icon: Package,          label: 'Produtos',        href: '/dashboard/produtos' },
+  { icon: Utensils,         label: 'Produção',        href: '/dashboard/producao' },
+  { icon: Truck,            label: 'Entregas',        href: '/dashboard/entregas/agenda' },
+  { icon: BarChart2,        label: 'Estoque',         href: '/dashboard/estoque' },
+  { icon: Package,          label: 'Lotes/Validades', href: '/dashboard/lotes' },
+  { icon: ShoppingBag,      label: 'Compras Auto',    href: '/dashboard/compras' },
+  { icon: Calculator,       label: 'Precificação',    href: '/dashboard/precificacao' },
+  { icon: TrendingDown,     label: 'Despesas',        href: '/dashboard/despesas' },
+  { icon: Wallet,           label: 'Financeiro',      href: '/dashboard/financeiro' },
+  { icon: TrendingUp,       label: 'Relatórios',      href: '/dashboard/relatorios' },
+  { icon: MessageCircle,    label: 'WhatsApp',        href: '/dashboard/whatsapp' },
+  { icon: UserCog,          label: 'Usuários',        href: '/dashboard/usuarios' },
+  { icon: Brain,            label: 'IA',              href: '/dashboard/ia' },
+  { icon: Settings,         label: 'Configurações',   href: '/dashboard/configuracoes' },
 ]
 
 interface SidebarMenuProps {
@@ -68,11 +69,13 @@ export default function SidebarMenu({ tipo, titulo, subtitulo }: SidebarMenuProp
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
-  const [aprovacoesPend, setAprovacoesPend] = useState(0)
-  const [contasVencidas, setContasVencidas] = useState(0)
-  const [pedidosPendentes, setPedidosPendentes] = useState(0)
 
-  // Carregar badges (aprovações + financeiro) apenas para admin — polling 2 min
+  const [aprovacoesPend, setAprovacoesPend]   = useState(0)
+  const [contasVencidas, setContasVencidas]   = useState(0)
+  const [pedidosPendentes, setPedidosPendentes] = useState(0)
+  const [estoqueCritico, setEstoqueCritico]   = useState(0)
+
+  // ─── badges: aprovações + financeiro — polling 2 min ─────
   useEffect(() => {
     if (tipo !== 'admin') return
     async function loadBadges() {
@@ -88,9 +91,7 @@ export default function SidebarMenu({ tipo, titulo, subtitulo }: SidebarMenuProp
     return () => clearInterval(interval)
   }, [tipo])
 
-  // APONTAMENTO 5 — Pedidos pendentes em tempo real (badge amarelo intermitente)
-  // Usa Supabase Realtime: atualiza no instante em que um pedido novo é criado
-  // ou aceito por um gerente/admin.
+  // ─── badge: pedidos pendentes — Realtime ──────────────────
   useEffect(() => {
     if (tipo !== 'admin') return
     let mounted = true
@@ -106,17 +107,25 @@ export default function SidebarMenu({ tipo, titulo, subtitulo }: SidebarMenuProp
 
     const channel = supabase
       .channel('sidebar-pedidos-pendentes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'pedidos' },
-        () => fetchPedidos()
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pedidos' }, () => fetchPedidos())
       .subscribe()
 
-    return () => {
-      mounted = false
-      supabase.removeChannel(channel)
+    return () => { mounted = false; supabase.removeChannel(channel) }
+  }, [tipo])
+
+  // ─── badge: insumos críticos/zerados — polling 5 min ─────
+  useEffect(() => {
+    if (tipo !== 'admin') return
+    async function fetchEstoque() {
+      const { data } = await supabase
+        .from('estoque_insumos')
+        .select('saldo')
+      const criticos = (data ?? []).filter(e => e.saldo < 100).length
+      setEstoqueCritico(criticos)
     }
+    fetchEstoque()
+    const interval = setInterval(fetchEstoque, 300000) // 5 min
+    return () => clearInterval(interval)
   }, [tipo])
 
   async function handleLogout() {
@@ -125,7 +134,7 @@ export default function SidebarMenu({ tipo, titulo, subtitulo }: SidebarMenuProp
     router.refresh()
   }
 
-  // Injetar badges nos itens
+  // ─── injetar badges nos itens ─────────────────────────────
   const itens: MenuItem[] = (
     tipo === 'admin' ? MENUS_ADMIN :
     tipo === 'vendedor' ? MENUS_VENDEDOR :
@@ -136,7 +145,9 @@ export default function SidebarMenu({ tipo, titulo, subtitulo }: SidebarMenuProp
     if (item.href === '/dashboard/financeiro' && contasVencidas > 0)
       return { ...item, badge: contasVencidas }
     if (item.href === '/dashboard/pedidos-index' && pedidosPendentes > 0)
-      return { ...item, badge: pedidosPendentes, badgeVariant: 'alerta' }
+      return { ...item, badge: pedidosPendentes, badgeVariant: 'alerta' as const }
+    if (item.href === '/dashboard/estoque' && estoqueCritico > 0)
+      return { ...item, badge: estoqueCritico, badgeVariant: 'info' as const }
     return item
   })
 
@@ -175,6 +186,8 @@ export default function SidebarMenu({ tipo, titulo, subtitulo }: SidebarMenuProp
                   item.href !== '/cliente' &&
                   pathname.startsWith(item.href))
               const hasAlerta = item.badgeVariant === 'alerta' && (item.badge ?? 0) > 0
+              const hasInfo   = item.badgeVariant === 'info'   && (item.badge ?? 0) > 0
+
               return (
                 <li key={item.href}>
                   <Link
@@ -196,7 +209,10 @@ export default function SidebarMenu({ tipo, titulo, subtitulo }: SidebarMenuProp
                           ? 'bg-bendito-verde-escuro text-white'
                           : hasAlerta
                             ? 'bg-red-600 text-white'
-                            : 'bg-red-500 text-white'}`}>
+                            : hasInfo
+                              ? 'bg-orange-500 text-white'
+                              : 'bg-red-500 text-white'
+                        }`}>
                         {item.badge > 99 ? '99+' : item.badge}
                       </span>
                     )}
