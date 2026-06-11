@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 import { ShoppingBag, Users, TrendingUp, Clock, CheckCircle2, Truck, XCircle, Package, RefreshCw, AlertCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { Loading, formatBRL } from '@/lib/constants'
-import { FILIAL_ID } from '@/lib/constants'
+import { Loading } from '@/components/ui'
+import { FILIAL_ID, formatBRL } from '@/lib/constants'
 
 // ─── tipos ────────────────────────────────────────────────────
 interface KPI {
