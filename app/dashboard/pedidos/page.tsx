@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { Plus, Search, RefreshCw, Clock, CheckCircle2, Truck, XCircle, Package } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { PageHeader, Loading, EmptyState, PrimaryButton, SecondaryButton, Field, Input, Select } from '@/components/ui'
+import { PageHeader, Loading, EmptyState, PrimaryButton, SecondaryButton, Field, Input, Select, Textarea } from '@/components/ui'
 import Modal from '@/components/Modal'
 import { FILIAL_ID, formatBRL, formatData } from '@/lib/constants'
 
@@ -432,8 +432,7 @@ export default function PedidosPage() {
           </Field>
 
           <Field label="Observações">
-            <Input
-              as="textarea"
+            <Textarea
               rows={2}
               value={form.observacoes}
               onChange={e => setForm(f => ({ ...f, observacoes: e.target.value }))}
