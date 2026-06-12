@@ -72,9 +72,42 @@ export function Loading() {
   )
 }
 
-export function EmptyState({ message }: { message: string }) {
+/**
+ * EmptyState — aceita 3 formatos (todos opcionais):
+ *   <EmptyState message="Nada aqui" />
+ *   <EmptyState title="Sem registros" description="Crie um novo para começar." />
+ *   <EmptyState title="Sem registros" />
+ *   <EmptyState />   → fallback genérico
+ *
+ * Quando title é fornecido, ele aparece em destaque acima de description/message.
+ * Mantém compatibilidade total com o uso original que só passava `message`.
+ */
+export function EmptyState({
+  message,
+  title,
+  description,
+}: {
+  message?: string
+  title?: string
+  description?: string
+}) {
+  const semNada = !message && !title && !description
   return (
-    <div className="bg-white rounded-xl shadow-md p-12 text-center text-gray-500">{message}</div>
+    <div className="bg-white rounded-xl shadow-md p-12 text-center">
+      {title && (
+        <p className="text-gray-700 font-semibold text-base mb-1">{title}</p>
+      )}
+      {message && !title && (
+        <p className="text-gray-500">{message}</p>
+      )}
+      {description && (
+        <p className="text-gray-500 text-sm">{description}</p>
+      )}
+      {message && title && (
+        <p className="text-gray-500 text-sm mt-1">{message}</p>
+      )}
+      {semNada && <p className="text-gray-500">Nada para mostrar.</p>}
+    </div>
   )
 }
 
