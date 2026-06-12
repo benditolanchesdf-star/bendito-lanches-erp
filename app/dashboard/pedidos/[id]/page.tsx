@@ -222,7 +222,7 @@ export default function PedidoDetalhe() {
   // ─── render ───────────────────────────────────────────────
   if (loading) return <Loading />
   if (!pedido) return (
-    <EmptyState title="Pedido não encontrado" description="Verifique o número e tente novamente." />
+    <EmptyState message="Pedido não encontrado. Verifique o número e tente novamente." />
   )
 
   return (
