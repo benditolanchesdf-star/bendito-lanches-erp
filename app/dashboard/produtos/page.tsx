@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { FILIAL_ID, formatBRL } from '@/lib/constants'
 import Modal from '@/components/Modal'
 import { Field, Input, Select, Textarea, PrimaryButton, SecondaryButton, PageHeader, Loading, EmptyState } from '@/components/ui'
-import { Plus, Edit, Search, AlertTriangle, CheckCircle2, Power, PowerOff, Upload, X, Image as ImageIcon } from 'lucide-react'
+import { Plus, Edit, Search, AlertTriangle, CheckCircle2, Power, PowerOff, Upload, X, Image as ImageIcon, Factory, Package } from 'lucide-react'
 
 type Produto = any
 
@@ -53,7 +53,8 @@ export default function ProdutosPage() {
       nome: '', codigo: '', categoria_id: '',
       preco_varejo: '', preco_atacado: '', custo_producao: '',
       estoque_atual: 0, estoque_minimo: 0, unidade_medida: 'unidade',
-      descricao: '', imagem_url: ''
+      descricao: '', imagem_url: '',
+      fabricado_internamente: true,  // 👈 NOVO: default true
     })
     setModalOpen(true)
   }
@@ -61,7 +62,12 @@ export default function ProdutosPage() {
     setEditando(p)
     setFeedback(null)
     setDebug('')
-    setForm({ ...p, categoria_id: p.categoria_id || '', imagem_url: p.imagem_url || '' })
+    setForm({
+      ...p,
+      categoria_id: p.categoria_id || '',
+      imagem_url: p.imagem_url || '',
+      fabricado_internamente: p.fabricado_internamente ?? true,  // 👈 NOVO: fallback true
+    })
     setModalOpen(true)
   }
 
@@ -158,6 +164,7 @@ export default function ProdutosPage() {
       unidade_medida: form.unidade_medida || 'unidade',
       descricao: form.descricao || null,
       imagem_url: form.imagem_url || null,
+      fabricado_internamente: form.fabricado_internamente ?? true,  // 👈 NOVO
     }
 
     console.log('[SALVAR] modo =', editando ? 'UPDATE' : 'INSERT', 'payload =', payload)
@@ -289,6 +296,7 @@ export default function ProdutosPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
           {filtrados.map((p) => {
             const inativo = p.ativo === false
+            const isRevenda = p.fabricado_internamente === false  // 👈 NOVO
             return (
               <div key={p.id} className={`bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition ${inativo ? 'opacity-60' : ''}`}>
                 <div className="h-28 bg-gradient-to-br from-bendito-verde to-bendito-dourado flex items-center justify-center text-5xl overflow-hidden">
@@ -302,7 +310,14 @@ export default function ProdutosPage() {
                       <span className="text-xs text-gray-500 uppercase">{p.categorias?.nome || 'Sem categoria'}</span>
                       <h3 className="font-bold text-bendito-verde-escuro truncate">{p.nome}</h3>
                     </div>
-                    {inativo && <span className="text-xs bg-gray-200 text-gray-700 px-2 py-0.5 rounded">inativo</span>}
+                    <div className="flex flex-col items-end gap-1">
+                      {inativo && <span className="text-xs bg-gray-200 text-gray-700 px-2 py-0.5 rounded">inativo</span>}
+                      {/* 👇 NOVO: badge de natureza */}
+                      {isRevenda
+                        ? <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-semibold flex items-center gap-1"><Package size={9}/> REVENDA</span>
+                        : <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-semibold flex items-center gap-1"><Factory size={9}/> FABRICADO</span>
+                      }
+                    </div>
                   </div>
                   <div className="mt-2 space-y-1 text-sm">
                     <div className="flex justify-between"><span className="text-gray-600">Varejo</span><span className="font-semibold text-bendito-verde">{formatBRL(p.preco_varejo)}</span></div>
@@ -376,6 +391,34 @@ export default function ProdutosPage() {
               </Select>
             </Field>
           </div>
+
+          {/* 👇 NOVO BLOCO: natureza do produto (fabricado x revenda) */}
+          <div className="bg-gradient-to-br from-bendito-creme to-white border border-bendito-dourado/40 rounded-xl p-4">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.fabricado_internamente ?? true}
+                onChange={(e) => setForm({ ...form, fabricado_internamente: e.target.checked })}
+                className="mt-1 w-4 h-4 accent-bendito-verde"
+              />
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  {(form.fabricado_internamente ?? true)
+                    ? <Factory size={16} className="text-bendito-verde" />
+                    : <Package size={16} className="text-blue-600" />}
+                  <span className="font-semibold text-sm text-bendito-verde-escuro">
+                    Produto fabricado internamente
+                  </span>
+                </div>
+                <p className="text-xs text-gray-600 mt-1">
+                  {(form.fabricado_internamente ?? true)
+                    ? '✓ Entra em ordens de produção. Insumos da ficha técnica são debitados automaticamente quando a OP é concluída.'
+                    : '↪ Produto de revenda (bebidas, doces prontos, etc). Não entra em OP, apenas baixa do estoque de produto pronto na venda.'}
+                </p>
+              </div>
+            </label>
+          </div>
+
           <div className="grid grid-cols-3 gap-4">
             <Field label="Preço Varejo" required><Input type="number" step="0.01" value={form.preco_varejo ?? ''} onChange={(e) => setForm({ ...form, preco_varejo: e.target.value })} /></Field>
             <Field label="Preço Atacado"><Input type="number" step="0.01" value={form.preco_atacado ?? ''} onChange={(e) => setForm({ ...form, preco_atacado: e.target.value })} /></Field>
