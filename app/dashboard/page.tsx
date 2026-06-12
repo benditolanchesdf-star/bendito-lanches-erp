@@ -90,7 +90,7 @@ export default function DashboardPage() {
       { data: ativos },
       { data: recentes },
       { data: itensMes },
-      { data: clientesMes },
+      { count: clientesMes },
     ] = await Promise.all([
       // pedidos de hoje
       supabase
@@ -168,7 +168,7 @@ export default function DashboardPage() {
       pedidos_saiu_entrega:   saiu_entrega,
       pedidos_entregues_hoje: entregues_hoje,
       pedidos_cancelados_hoje: cancelados_hoje,
-      clientes_novos_mes:     clientesMes?.count ?? 0,
+      clientes_novos_mes:     clientesMes ?? 0,
       faturamento_mes,
       pedidos_mes,
     })
